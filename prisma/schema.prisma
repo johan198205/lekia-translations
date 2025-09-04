@@ -10,20 +10,34 @@ datasource db {
   url      = "file:./dev.db"
 }
 
+model Upload {
+  id              String   @id @default(cuid())
+  filename        String
+  upload_date     DateTime
+  total_products  Int
+  products        Product[]
+  batches         ProductBatch[]
+  created_at      DateTime @default(now())
+  updated_at      DateTime @updatedAt
+}
+
 model ProductBatch {
   id              String   @id @default(cuid())
+  upload_id       String
   filename        String
   upload_date     DateTime
   total_products  Int
   status          ProductBatchStatus
   products        Product[]
+  upload          Upload   @relation(fields: [upload_id], references: [id])
   created_at      DateTime @default(now())
   updated_at      DateTime @updatedAt
 }
 
 model Product {
   id              String        @id @default(cuid())
-  batch_id        String
+  upload_id       String
+  batch_id        String?
   name_sv         String
   description_sv  String
   attributes      String?
@@ -36,7 +50,8 @@ model Product {
   created_at      DateTime      @default(now())
   updated_at      DateTime      @updatedAt
   
-  batch           ProductBatch  @relation(fields: [batch_id], references: [id])
+  upload          Upload        @relation(fields: [upload_id], references: [id])
+  batch           ProductBatch? @relation(fields: [batch_id], references: [id])
 }
 
 enum ProductBatchStatus {

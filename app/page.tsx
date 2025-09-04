@@ -17,12 +17,25 @@ interface Progress {
 }
 
 interface Product {
+  id?: string;
   name_sv: string;
   description_sv: string;
   attributes?: string;
   tone_hint?: string;
   optimized_sv?: string;
   status?: string;
+  batch_id?: string;
+}
+
+interface Upload {
+  id: string;
+  filename: string;
+  upload_date: string;
+  total_products: number;
+  products_remaining: number;
+  batches_count: number;
+  created_at: string;
+  updated_at: string;
 }
 
 interface PromptSettings {
@@ -50,6 +63,9 @@ export default function Home() {
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
   const [batchId, setBatchId] = useState<string>('')
   const [visibleRows, setVisibleRows] = useState<number>(200)
+  const [uploads, setUploads] = useState<Upload[]>([])
+  const [selectedUpload, setSelectedUpload] = useState<Upload | null>(null)
+  const [uploadId, setUploadId] = useState<string>('')
   const [progress, setProgress] = useState<Progress>({
     percent: 0,
     counts: { pending: 0, optimizing: 0, optimized: 0, translating: 0, completed: 0, error: 0 }
@@ -100,6 +116,23 @@ export default function Home() {
     
     const mode = localStorage.getItem('openaiMode') ?? 'stub'
     setOpenaiMode(mode)
+  }, [])
+
+  // Load existing uploads on mount
+  useEffect(() => {
+    const loadUploads = async () => {
+      try {
+        const response = await fetch('/api/uploads')
+        if (response.ok) {
+          const uploadsData = await response.json()
+          setUploads(uploadsData)
+        }
+      } catch (err) {
+        console.error('Failed to load uploads:', err)
+      }
+    }
+    
+    loadUploads()
   }, [])
 
   // Debounced save to localStorage
@@ -166,6 +199,32 @@ export default function Home() {
     setUploadAlert('')
     setParsedProducts([])
     setSelectedIds(new Set())
+    setSelectedUpload(null)
+    setUploadId('')
+  }
+
+  const handleUploadSelect = async (upload: Upload) => {
+    setSelectedUpload(upload)
+    setUploadId(upload.id)
+    setFile(null)
+    setError('')
+    setUploadAlert('')
+    
+    try {
+      const response = await fetch(`/api/uploads/${upload.id}/products`)
+      if (response.ok) {
+        const data = await response.json()
+        setParsedProducts(data.products)
+        setProductsCount(data.products.length)
+        setSelectedIds(new Set(data.products.map((_: any, index: number) => index)))
+        setPhase('uploaded')
+        setUploadAlert(`✅ Upload vald: ${upload.filename} (${data.products.length} produkter)`)
+      } else {
+        setUploadAlert('❌ Fel vid hämtning av upload-produkter')
+      }
+    } catch (err) {
+      setUploadAlert('❌ Fel vid hämtning av upload-produkter: Nätverksfel')
+    }
   }
 
   const handleUpload = async () => {
@@ -185,9 +244,16 @@ export default function Home() {
         setProductsCount(data.products.length)
         setParsedProducts(data.products)
         setSelectedIds(new Set(data.products.map((_: any, index: number) => index)))
-        setBatchId(data.batchId) // Set batchId from upload response
+        setUploadId(data.uploadId) // Set uploadId from upload response
         setPhase('uploaded')
         setUploadAlert(`✅ Fil uppladdad! ${data.products.length} produkter hittades.`)
+        
+        // Reload uploads list to include the new upload
+        const uploadsResponse = await fetch('/api/uploads')
+        if (uploadsResponse.ok) {
+          const uploadsData = await uploadsResponse.json()
+          setUploads(uploadsData)
+        }
       } else {
         const errorData = await response.json()
         setUploadAlert(`❌ Fel vid uppladdning: ${errorData.error || 'Okänt fel'}`)
@@ -198,12 +264,33 @@ export default function Home() {
   }
 
   const handleCreateBatch = async () => {
-    if (!file || selectedIds.size === 0) return
+    if (!uploadId || selectedIds.size === 0) return
 
-    // No need to create a new batch - just set the phase
-    // The batch was already created during upload
-    setPhase('batched')
-    setBatchAlert(`✅ Batch redo! ${selectedIds.size} produkter valda för optimering.`)
+    try {
+      // Get selected product IDs
+      const selectedProductIds = Array.from(selectedIds).map(index => parsedProducts[index]?.id).filter(Boolean)
+      
+      const response = await fetch('/api/batches', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          upload_id: uploadId,
+          selected_product_ids: selectedProductIds
+        })
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        setBatchId(data.id)
+        setPhase('batched')
+        setBatchAlert(`✅ Batch skapad! ${selectedIds.size} produkter valda för optimering.`)
+      } else {
+        const errorData = await response.json()
+        setBatchAlert(`❌ Fel vid skapande av batch: ${errorData.error || 'Okänt fel'}`)
+      }
+    } catch (err) {
+      setBatchAlert('❌ Fel vid skapande av batch: Nätverksfel')
+    }
   }
 
   const handleOptimize = async () => {
@@ -430,29 +517,80 @@ export default function Home() {
 
         {/* A) Upload-sektion */}
         <div className="bg-white rounded-lg shadow-md p-6 mb-6">
-          <h2 className="text-xl font-semibold mb-4">A) Ladda upp Excel-fil</h2>
+          <h2 className="text-xl font-semibold mb-4">A) Välj eller ladda upp Excel-fil</h2>
           <div className="space-y-4">
-            <input
-              type="file"
-              accept=".xlsx"
-              onChange={handleFileChange}
-              className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
-            />
-            {file && (
-              <p className="text-sm text-gray-600">
-                Vald fil: {file.name} ({(file.size / 1024 / 1024).toFixed(2)} MB)
-              </p>
+            
+            {/* Befintliga uploads */}
+            {uploads.length > 0 && (
+              <div className="space-y-2">
+                <label className="block text-sm font-medium text-gray-700">
+                  Befintliga uploads:
+                </label>
+                <select
+                  value={selectedUpload?.id || ''}
+                  onChange={(e) => {
+                    const upload = uploads.find(u => u.id === e.target.value)
+                    if (upload) {
+                      handleUploadSelect(upload)
+                    } else {
+                      setSelectedUpload(null)
+                      setUploadId('')
+                      setParsedProducts([])
+                      setSelectedIds(new Set())
+                      setPhase('idle')
+                    }
+                  }}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">-- Välj befintlig upload --</option>
+                  {uploads.map((upload) => (
+                    <option key={upload.id} value={upload.id}>
+                      {upload.filename} ({upload.products_remaining} produkter kvar, {upload.batches_count} batches)
+                    </option>
+                  ))}
+                </select>
+                {selectedUpload && (
+                  <div className="text-sm text-gray-600 bg-gray-50 p-2 rounded">
+                    <p><strong>Fil:</strong> {selectedUpload.filename}</p>
+                    <p><strong>Uppladdad:</strong> {new Date(selectedUpload.upload_date).toLocaleString('sv-SE')}</p>
+                    <p><strong>Totalt produkter:</strong> {selectedUpload.total_products}</p>
+                    <p><strong>Produkter kvar att optimera:</strong> {selectedUpload.products_remaining}</p>
+                    <p><strong>Skapade batches:</strong> {selectedUpload.batches_count}</p>
+                  </div>
+                )}
+              </div>
             )}
-            {error && (
-              <p className="text-sm text-red-600">{error}</p>
-            )}
-            <button
-              onClick={handleUpload}
-              disabled={!file}
-              className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
-            >
-              Ladda upp
-            </button>
+
+            <div className="text-center text-gray-500">eller</div>
+
+            {/* Ny fil-upload */}
+            <div className="space-y-2">
+              <label className="block text-sm font-medium text-gray-700">
+                Ladda upp ny fil:
+              </label>
+              <input
+                type="file"
+                accept=".xlsx"
+                onChange={handleFileChange}
+                className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+              />
+              {file && (
+                <p className="text-sm text-gray-600">
+                  Vald fil: {file.name} ({(file.size / 1024 / 1024).toFixed(2)} MB)
+                </p>
+              )}
+              {error && (
+                <p className="text-sm text-red-600">{error}</p>
+              )}
+              <button
+                onClick={handleUpload}
+                disabled={!file}
+                className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
+              >
+                Ladda upp ny fil
+              </button>
+            </div>
+
             {uploadAlert && (
               <p className={`text-sm ${uploadAlert.startsWith('✅') ? 'text-green-600' : 'text-red-600'}`}>
                 {uploadAlert}

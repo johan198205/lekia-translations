@@ -50,17 +50,16 @@ export async function POST(request: NextRequest) {
     // Normalize Excel data
     const result = await normalize(buffer);
 
-    // Create batch first
-    const batch = await prisma.productBatch.create({
+    // Create upload first
+    const upload = await prisma.upload.create({
       data: {
         filename: file.name,
         upload_date: new Date(),
-        total_products: result.products.length,
-        status: 'pending'
+        total_products: result.products.length
       }
     });
 
-    // Create products with correct batch_id
+    // Create products with upload_id (no batch_id initially)
     const products = await Promise.all(
       result.products.map(async (product) => {
         return await prisma.product.create({
@@ -70,23 +69,23 @@ export async function POST(request: NextRequest) {
             attributes: product.attributes,
             tone_hint: product.tone_hint,
             status: 'pending',
-            batch_id: batch.id
+            upload_id: upload.id
           }
         });
       })
     );
 
-    console.log(`[UPLOAD] Created ${products.length} products for batch ${batch.id}`);
+    console.log(`[UPLOAD] Created ${products.length} products for upload ${upload.id}`);
     console.log(`[UPLOAD] Product IDs:`, products.map(p => p.id));
 
     // Verify products were created by fetching them back
     const verifyProducts = await prisma.product.findMany({
-      where: { batch_id: batch.id }
+      where: { upload_id: upload.id }
     });
-    console.log(`[UPLOAD] Verified ${verifyProducts.length} products in database for batch ${batch.id}`);
+    console.log(`[UPLOAD] Verified ${verifyProducts.length} products in database for upload ${upload.id}`);
 
     return NextResponse.json({
-      batchId: batch.id,
+      uploadId: upload.id,
       products: result.products,
       meta: result.meta
     });
