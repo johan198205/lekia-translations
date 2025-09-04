@@ -1,0 +1,56 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+model ProductBatch {
+  id              String   @id @default(cuid())
+  filename        String
+  upload_date     DateTime
+  total_products  Int
+  status          ProductBatchStatus
+  products        Product[]
+  created_at      DateTime @default(now())
+  updated_at      DateTime @updatedAt
+}
+
+model Product {
+  id              String        @id @default(cuid())
+  batch_id        String
+  name_sv         String
+  description_sv  String
+  attributes      String?
+  tone_hint       String?
+  optimized_sv    String?
+  translated_da   String?
+  translated_no   String?
+  status          ProductStatus
+  error_message   String?
+  created_at      DateTime      @default(now())
+  updated_at      DateTime      @updatedAt
+  
+  batch           ProductBatch  @relation(fields: [batch_id], references: [id])
+}
+
+enum ProductBatchStatus {
+  pending
+  running
+  completed
+  error
+}
+
+enum ProductStatus {
+  pending
+  optimizing
+  optimized
+  translating
+  completed
+  error
+}
