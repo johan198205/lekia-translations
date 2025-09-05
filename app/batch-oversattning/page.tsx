@@ -1,7 +1,9 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, Suspense } from 'react'
+import { useSearchParams } from 'next/navigation'
 import ProductDrawer from '../components/ProductDrawer'
+import ProgressBar from '../components/ProgressBar'
 
 interface Progress {
   percent: number
@@ -80,7 +82,8 @@ interface PromptSettings {
 
 type Phase = 'idle' | 'uploaded' | 'batched' | 'optimizing' | 'translating' | 'readyToExport'
 
-export default function Home() {
+function BatchOversattningContent() {
+  const searchParams = useSearchParams()
   const [file, setFile] = useState<File | null>(null)
   const [jobType, setJobType] = useState<'product_texts' | 'ui_strings'>('product_texts')
   const [productsCount, setProductsCount] = useState<number>(0)
@@ -145,8 +148,13 @@ export default function Home() {
   const eventSourceRef = useRef<EventSource | null>(null)
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
-  // Load prompt settings and openaiMode from localStorage on mount
+  // Load jobType from URL params and prompt settings from localStorage on mount
   useEffect(() => {
+    const urlJobType = searchParams.get('jobType') as 'product_texts' | 'ui_strings'
+    if (urlJobType && (urlJobType === 'product_texts' || urlJobType === 'ui_strings')) {
+      setJobType(urlJobType)
+    }
+
     const saved = localStorage.getItem('promptSettingsV1')
     if (saved) {
       try {
@@ -159,7 +167,7 @@ export default function Home() {
     
     const mode = localStorage.getItem('openaiMode') ?? 'stub'
     setOpenaiMode(mode)
-  }, [])
+  }, [searchParams])
 
   // Load existing uploads and batches on mount
   useEffect(() => {
@@ -1077,12 +1085,32 @@ export default function Home() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 py-8">
-      <div className="max-w-6xl mx-auto px-4">
-        <h1 className="text-3xl font-bold text-gray-900 mb-8 text-center">
-          Lekia Produktöversättning
+    <div className="wizard-container">
+      <div className="wizard-header">
+        <h1 className="wizard-title">
+          {jobType === 'product_texts' ? 'Produktöversättning' : 'UI-element Översättning'}
         </h1>
+        <div className="wizard-steps">
+          <div className={`step ${phase === 'idle' || phase === 'uploaded' ? 'active' : phase === 'batched' || phase === 'optimizing' || phase === 'translating' || phase === 'readyToExport' ? 'completed' : ''}`}>
+            <span className="step-number">1</span>
+            <span className="step-label">Välj/Importera</span>
+          </div>
+          <div className={`step ${phase === 'batched' || phase === 'optimizing' || phase === 'translating' || phase === 'readyToExport' ? 'active' : ''}`}>
+            <span className="step-number">2</span>
+            <span className="step-label">Skapa batch</span>
+          </div>
+          <div className={`step ${phase === 'optimizing' || phase === 'translating' || phase === 'readyToExport' ? 'active' : ''}`}>
+            <span className="step-number">3</span>
+            <span className="step-label">{jobType === 'product_texts' ? 'Optimera & Översätt' : 'Översätt'}</span>
+          </div>
+          <div className={`step ${phase === 'readyToExport' ? 'active' : ''}`}>
+            <span className="step-number">4</span>
+            <span className="step-label">Exportera</span>
+          </div>
+        </div>
+      </div>
 
+      <div className="wizard-content">
         {/* A) Upload-sektion */}
         <div className="bg-white rounded-lg shadow-md p-6 mb-6">
           <h2 className="text-xl font-semibold mb-4">A) Välj eller ladda upp Excel-fil</h2>
@@ -1458,59 +1486,27 @@ export default function Home() {
             
             
             {phase === 'optimizing' && (
-              <div className="space-y-3">
-                <div className="w-full bg-gray-200 rounded-full h-2.5">
-                  <div 
-                    className="bg-purple-600 h-2.5 rounded-full transition-all duration-300" 
-                    style={{ width: `${progress.percent}%` }}
-                  ></div>
-                </div>
-                <div className="flex justify-between items-center text-sm text-gray-600">
-                  <span>
-                    {progress.percent}% klart ({progress.done || 0}/{progress.total || 0} {jobType === 'product_texts' ? 'produkter' : 'UI-element'})
-                  </span>
-                  {optimizationStartTime && (
-                    <span className="font-mono">
-                      Tid: {getElapsedTime()}
-                    </span>
-                  )}
-                </div>
-                {progress.counts && (
-                  <div className="grid grid-cols-3 gap-4 text-sm">
-                    <div>Väntar: {progress.counts.pending}</div>
-                    <div>{jobType === 'product_texts' ? 'Optimerar' : 'Bearbetar'}: {progress.counts.optimizing}</div>
-                    <div>Klar: {progress.counts.optimized}</div>
-                  </div>
-                )}
-              </div>
+              <ProgressBar
+                percent={progress.percent}
+                done={progress.done}
+                total={progress.total}
+                counts={progress.counts}
+                startTime={optimizationStartTime}
+                jobType={jobType}
+                phase="optimizing"
+              />
             )}
 
             {phase === 'translating' && (
-              <div className="space-y-3">
-                <div className="w-full bg-gray-200 rounded-full h-2.5">
-                  <div 
-                    className="bg-blue-600 h-2.5 rounded-full transition-all duration-300" 
-                    style={{ width: `${progress.percent}%` }}
-                  ></div>
-                </div>
-                <div className="flex justify-between items-center text-sm text-gray-600">
-                  <span>
-                    {progress.percent}% klart ({progress.done || 0}/{progress.total || 0} {jobType === 'product_texts' ? 'produkter' : 'UI-element'})
-                  </span>
-                  {translationStartTime && (
-                    <span className="font-mono">
-                      Tid: {getTranslationElapsedTime()}
-                    </span>
-                  )}
-                </div>
-                {progress.counts && (
-                  <div className="grid grid-cols-3 gap-4 text-sm">
-                    <div>Väntar: {progress.counts.pending}</div>
-                    <div>{jobType === 'product_texts' ? 'Översätter' : 'Bearbetar'}: {jobType === 'product_texts' ? progress.counts.translating : progress.counts.optimizing}</div>
-                    <div>Klar: {progress.counts.completed}</div>
-                  </div>
-                )}
-              </div>
+              <ProgressBar
+                percent={progress.percent}
+                done={progress.done}
+                total={progress.total}
+                counts={progress.counts}
+                startTime={translationStartTime}
+                jobType={jobType}
+                phase="translating"
+              />
             )}
             
             {optimizeAlert && (
@@ -1832,5 +1828,13 @@ export default function Home() {
         />
       </div>
     </div>
+  )
+}
+
+export default function BatchOversattningPage() {
+  return (
+    <Suspense fallback={<div>Loading...</div>}>
+      <BatchOversattningContent />
+    </Suspense>
   )
 }

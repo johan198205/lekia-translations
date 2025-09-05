@@ -7,16 +7,16 @@ export default function Sidebar() {
   const pathname = usePathname()
 
   const navItems = [
-    { href: '/batch-oversattning', label: 'Batch-översättning' },
-    { href: '/fardiga-batchar', label: 'Färdiga batchar' },
-    { href: '/installningar', label: 'Inställningar' }
+    { href: '/', label: 'Start', icon: '🏠' },
+    { href: '/batch-oversattning', label: 'Batch-översättning', icon: '⚙️' },
+    { href: '/fardiga-batchar', label: 'Färdiga batchar', icon: '📋' },
+    { href: '/installningar', label: 'Inställningar', icon: '⚙️' }
   ]
 
   return (
     <div className="sidebar">
       <div className="sidebar-header">
         <div className="logo">
-          {/* TODO: Replace with actual logo asset */}
           <div className="logo-placeholder">LEKIA</div>
         </div>
       </div>
@@ -28,7 +28,8 @@ export default function Sidebar() {
             href={item.href}
             className={`nav-link ${pathname === item.href ? 'active' : ''}`}
           >
-            {item.label}
+            <span className="nav-icon">{item.icon}</span>
+            <span className="nav-label">{item.label}</span>
           </Link>
         ))}
       </nav>

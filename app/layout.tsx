@@ -1,5 +1,5 @@
 import './globals.css'
-import Sidebar from './components/Sidebar'
+import AppShell from './components/AppShell'
 
 export const metadata = {
   title: 'Lekia Produktöversättning',
@@ -14,12 +14,9 @@ export default function RootLayout({
   return (
     <html lang="sv" suppressHydrationWarning>
       <body className="antialiased">
-        <div className="app-layout">
-          <Sidebar />
-          <main className="main-content">
-            {children}
-          </main>
-        </div>
+        <AppShell>
+          {children}
+        </AppShell>
       </body>
     </html>
   )

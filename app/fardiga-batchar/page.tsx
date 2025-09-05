@@ -22,6 +22,7 @@ interface Batch {
   job_type: 'product_texts' | 'ui_strings'
   products: Product[]
   ui_items?: any[]
+  created_at: string
 }
 
 export default function FardigaBatcharPage() {
@@ -44,12 +45,14 @@ export default function FardigaBatcharPage() {
         const response = await fetch(`/api/batches?jobType=${selectedJobType}`)
         if (response.ok) {
           const allBatches = await response.json()
-          // Filter for batches with optimized products or completed status
-          const readyBatches = allBatches.filter((batch: Batch) => 
-            batch.status === 'completed' || 
-            (batch.products && batch.products.some((product: any) => product.status === 'optimized')) ||
-            (batch.ui_items && batch.ui_items.length > 0) // UI items are ready when they exist
-          )
+          // Filter for batches with optimized products or completed status, sorted by created_at DESC
+          const readyBatches = allBatches
+            .filter((batch: Batch) => 
+              batch.status === 'completed' || 
+              (batch.products && batch.products.some((product: any) => product.status === 'optimized')) ||
+              (batch.ui_items && batch.ui_items.length > 0) // UI items are ready when they exist
+            )
+            .sort((a: Batch, b: Batch) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
           setBatches(readyBatches)
         } else {
           setError('Fel vid hämtning av batchar')
@@ -176,40 +179,31 @@ export default function FardigaBatcharPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 py-8">
-      <div className="max-w-6xl mx-auto px-4">
-        <h1 className="text-3xl font-bold text-gray-900 mb-8 text-center">
-          Färdiga batchar
-        </h1>
-        
+    <div className="fardiga-batchar-container">
+      <div className="page-header">
+        <h1 className="page-title">Färdiga batchar</h1>
+        <p className="page-subtitle">Hantera och granska dina färdiga översättningsbatchar</p>
+      </div>
+      
+      <div className="page-content">
         {/* Job type selector */}
-        <div className="bg-white rounded-lg shadow-md p-6 mb-6">
-          <h2 className="text-xl font-semibold mb-4">Välj jobbtyp</h2>
-          <div className="space-y-4">
-            <div className="flex gap-4">
-              <label className="flex items-center">
-                <input
-                  type="radio"
-                  name="jobType"
-                  value="product_texts"
-                  checked={selectedJobType === 'product_texts'}
-                  onChange={() => handleJobTypeChange('product_texts')}
-                  className="mr-2"
-                />
-                Produkttexter
-              </label>
-              <label className="flex items-center">
-                <input
-                  type="radio"
-                  name="jobType"
-                  value="ui_strings"
-                  checked={selectedJobType === 'ui_strings'}
-                  onChange={() => handleJobTypeChange('ui_strings')}
-                  className="mr-2"
-                />
-                UI-element (Webbplatstexter)
-              </label>
-            </div>
+        <div className="filter-section">
+          <h2 className="filter-title">Filtrera efter jobbtyp</h2>
+          <div className="job-type-tabs">
+            <button
+              className={`job-type-tab ${selectedJobType === 'product_texts' ? 'active' : ''}`}
+              onClick={() => handleJobTypeChange('product_texts')}
+            >
+              <span className="tab-icon">📦</span>
+              <span className="tab-label">Produkttexter</span>
+            </button>
+            <button
+              className={`job-type-tab ${selectedJobType === 'ui_strings' ? 'active' : ''}`}
+              onClick={() => handleJobTypeChange('ui_strings')}
+            >
+              <span className="tab-icon">🌐</span>
+              <span className="tab-label">UI-element</span>
+            </button>
           </div>
         </div>
         
@@ -334,12 +328,15 @@ export default function FardigaBatcharPage() {
                           {locale}
                         </th>
                       ))}
+                      <th className="border border-gray-300 px-4 py-2 text-left font-medium text-gray-700">
+                        Status
+                      </th>
                     </tr>
                   </thead>
                   <tbody>
                     {!selectedBatch.ui_items || selectedBatch.ui_items.length === 0 ? (
                       <tr>
-                        <td colSpan={selectedBatch.ui_items && selectedBatch.ui_items.length > 0 && selectedBatch.ui_items[0].values ? Object.keys(JSON.parse(selectedBatch.ui_items[0].values)).length + 1 : 1} className="border border-gray-300 px-4 py-8 text-center text-gray-500">
+                        <td colSpan={selectedBatch.ui_items && selectedBatch.ui_items.length > 0 && selectedBatch.ui_items[0].values ? Object.keys(JSON.parse(selectedBatch.ui_items[0].values)).length + 2 : 2} className="border border-gray-300 px-4 py-8 text-center text-gray-500">
                           Inga UI-element hittades i denna batch.
                         </td>
                       </tr>
@@ -349,7 +346,9 @@ export default function FardigaBatcharPage() {
                         return (
                           <tr key={item.id} className="hover:bg-gray-50">
                             <td className="border border-gray-300 px-4 py-2 text-sm font-medium">
-                              {item.name}
+                              <div className="truncate-cell" title={item.name}>
+                                {item.name}
+                              </div>
                             </td>
                             {Object.entries(values).map(([locale, value]) => (
                               <td key={locale} className="border border-gray-300 px-4 py-2 text-sm">
@@ -358,6 +357,9 @@ export default function FardigaBatcharPage() {
                                 </div>
                               </td>
                             ))}
+                            <td className="border border-gray-300 px-4 py-2 text-sm text-gray-700">
+                              {item.status || 'pending'}
+                            </td>
                           </tr>
                         )
                       })
