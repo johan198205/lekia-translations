@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { translateQueue } from '@/lib/queue'
 import { translateTo } from '@/lib/llm/adapter'
+import { cleanTranslationFormat } from '@/lib/format-guard'
 
 export async function POST(
   request: NextRequest,
@@ -9,7 +10,7 @@ export async function POST(
 ) {
   try {
     const { id: batchId } = await params
-    const { languages, selectedProductIds } = await request.json()
+    const { languages, selectedProductIds, clientPromptSettings } = await request.json()
 
     if (!languages || !Array.isArray(languages) || languages.length === 0) {
       return NextResponse.json(
@@ -21,16 +22,7 @@ export async function POST(
     // Verify batch exists and has optimized products
     const batch = await prisma.productBatch.findUnique({
       where: { id: batchId },
-      include: { 
-        products: {
-          where: { 
-            status: 'optimized',
-            ...(selectedProductIds && selectedProductIds.length > 0 ? {
-              id: { in: selectedProductIds }
-            } : {})
-          }
-        }
-      }
+      include: { products: true }
     })
 
     if (!batch) {
@@ -40,66 +32,98 @@ export async function POST(
       )
     }
 
-    if (batch.products.length === 0) {
+    // Filter products that have optimized_sv and are selected
+    const productsToTranslate = batch.products.filter(product => {
+      const hasOptimizedSv = product.optimized_sv && product.optimized_sv.trim()
+      const isSelected = !selectedProductIds || selectedProductIds.length === 0 || 
+                        selectedProductIds.includes(product.id)
+      return hasOptimizedSv && isSelected
+    })
+
+    if (productsToTranslate.length === 0) {
       return NextResponse.json(
-        { error: 'No optimized products found' },
+        { error: 'No optimized products found for translation' },
         { status: 400 }
       )
     }
 
-    // Add translation jobs to queue
-    for (const product of batch.products) {
-      for (const lang of languages) {
-        await translateQueue.add('translate', {
-          batchId,
-          productId: product.id,
-          language: lang,
-          optimizedText: product.optimized_sv
-        })
-      }
-    }
+    console.log(`[TRANSLATE] Starting translation for ${productsToTranslate.length} products`)
+    console.log(`[TRANSLATE] Languages:`, languages)
 
-    // Start processing (simulate async processing)
+    // Update batch status
+    await prisma.productBatch.update({
+      where: { id: batchId },
+      data: { status: 'running' }
+    })
+
+    // Process each product directly (like optimize does) - but return immediately for progress tracking
+    // Start async processing
     setTimeout(async () => {
-      await translateQueue.process('translate', async (job) => {
-        const { productId, language, optimizedText } = job.data
+      for (let i = 0; i < productsToTranslate.length; i++) {
+        const product = productsToTranslate[i]
         
-        try {
-          // Use LLM adapter for translation
-          const translatedText = await translateTo({
-            text: optimizedText,
-            target: language as 'da' | 'no'
-          })
-          
-          // Update product with translated text
-          const updateData: any = { status: 'completed' }
-          if (language === 'da') {
-            updateData.translated_da = translatedText
-          } else if (language === 'no') {
-            updateData.translated_no = translatedText
-          }
-          
-          await prisma.product.update({
-            where: { id: productId },
-            data: updateData
-          })
-        } catch (error) {
-          console.error('Translation error for product:', productId, error)
-          await prisma.product.update({
-            where: { id: productId },
-            data: {
-              status: 'error',
-              error_message: 'Translation failed'
+        for (const language of languages) {
+          try {
+            console.log(`[TRANSLATE] Processing product: ${product.name_sv} -> ${language}`)
+            
+            // Set status to translating
+            await prisma.product.update({
+              where: { id: product.id },
+              data: { status: 'translating' }
+            })
+            
+            // Use LLM adapter for translation with client prompt settings
+            const translatedText = await translateTo({
+              text: product.optimized_sv!,
+              target: language as 'da' | 'no'
+            })
+            
+            // Apply format guard to clean up any extra # characters
+            const cleanedText = cleanTranslationFormat(product.optimized_sv!, translatedText)
+            
+            console.log(`[TRANSLATE] Product ${product.name_sv} translated to ${language} successfully`)
+            
+            // Update product with translated text
+            const updateData: any = {}
+            if (language === 'da') {
+              updateData.translated_da = cleanedText
+            } else if (language === 'no') {
+              updateData.translated_no = cleanedText
             }
-          })
+            
+            // Set status to completed if both languages are done, otherwise keep as optimized
+            const hasDa = language === 'da' ? true : (product.translated_da && product.translated_da.trim())
+            const hasNo = language === 'no' ? true : (product.translated_no && product.translated_no.trim())
+            
+            if (hasDa && hasNo) {
+              updateData.status = 'completed'
+            } else {
+              updateData.status = 'optimized'
+            }
+            
+            await prisma.product.update({
+              where: { id: product.id },
+              data: updateData
+            })
+            
+          } catch (error) {
+            console.error(`[TRANSLATE] Error translating product ${product.name_sv} to ${language}:`, error)
+            await prisma.product.update({
+              where: { id: product.id },
+              data: {
+                status: 'error',
+                error_message: `Translation to ${language} failed`
+              }
+            })
+          }
         }
-      })
+      }
     }, 100)
 
     return NextResponse.json({
       message: 'Translation started',
       batchId,
-      productsCount: batch.products.length,
+      productsCount: productsToTranslate.length,
       languages
     })
   } catch (error) {

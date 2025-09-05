@@ -113,8 +113,23 @@ export async function GET(
             const completed = productsToCheck.filter(p => p.status === 'completed').length
             const error = productsToCheck.filter(p => p.status === 'error').length
 
-            const processedProducts = total - pending
-            const percent = total > 0 ? Math.round((processedProducts / total) * 100) : 0
+            // Calculate progress based on current phase
+            let processedProducts: number
+            let percent: number
+            
+            if (optimizing > 0 || optimized > 0) {
+              // Optimization phase: count optimized + completed as processed
+              processedProducts = optimized + completed
+              percent = total > 0 ? Math.round((processedProducts / total) * 100) : 0
+            } else if (translating > 0) {
+              // Translation phase: count completed as processed (translating is in progress)
+              processedProducts = completed
+              percent = total > 0 ? Math.round((processedProducts / total) * 100) : 0
+            } else {
+              // Default: count non-pending as processed
+              processedProducts = total - pending
+              percent = total > 0 ? Math.round((processedProducts / total) * 100) : 0
+            }
 
             console.log(`[EVENTS] Progress update for batch ${batchId}:`, {
               total,

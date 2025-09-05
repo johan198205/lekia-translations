@@ -228,13 +228,13 @@ export async function translateTo(input: TranslateInput): Promise<string> {
       const systemPrompt = `Du är en professionell översättare. Översätt svensk text till ${targetLang}.
 
 Regler:
-- Bevara exakt rubrikstruktur (H1, H2, H3)
-- Bevara punktlistor och ordning
-- Inga nya fakta eller information
-- Behåll formatering och layout
+- Översätt verbatim utan att ändra struktur/HTML/markdown
+- Lägg INTE till #/## rubriknivåer, listtecken eller extra text
+- Behåll {{...}}, radbrytningar, taggar och ordningen exakt
+- Översätt endast textnoder
 - Temperatur: 0 (exakt översättning)`;
 
-      const userPrompt = `Översätt följande svenska text till ${targetLang}. Bevara alla rubriker, punktlistor och struktur exakt:
+      const userPrompt = `Översätt svenska → ${targetLang} verbatim. Behåll exakt struktur/HTML/markdown. Lägg inte till rubriker eller '#'-tecken. Bevara alla taggar, klamrar {{...}}, listor, radbrytningar och ordning. Översätt endast textnoder:
 
 ${input.text}`;
 
@@ -265,6 +265,9 @@ ${input.text}`;
   }
   
   // Stub implementation (preserves exact structure from tests)
+  // Add small delay to simulate real API call
+  await new Promise(resolve => setTimeout(resolve, 500 + Math.random() * 1000));
+  
   const langCode = input.target.toUpperCase();
   const langSuffix = input.target === 'da' ? ' [DA]' : ' [NO]';
   

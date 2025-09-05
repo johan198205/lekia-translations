@@ -101,8 +101,10 @@ export default function Home() {
   const [openaiMode, setOpenaiMode] = useState<string>('stub')
   const [expandedProducts, setExpandedProducts] = useState<Set<number>>(new Set())
   const [optimizationStartTime, setOptimizationStartTime] = useState<number | null>(null)
+  const [translationStartTime, setTranslationStartTime] = useState<number | null>(null)
+  const [translationLanguage, setTranslationLanguage] = useState<'no' | 'da' | null>(null)
   const [drawerProduct, setDrawerProduct] = useState<Product | null>(null)
-  const [drawerField, setDrawerField] = useState<'description_sv' | 'optimized_sv' | 'translated_no' | null>(null)
+  const [drawerField, setDrawerField] = useState<'description_sv' | 'optimized_sv' | 'translated_no' | 'translated_da' | null>(null)
   const [isDrawerOpen, setIsDrawerOpen] = useState(false)
   
   // Prompt settings state
@@ -183,9 +185,9 @@ export default function Home() {
     }
   }, [promptSettings])
 
-  // Update progress based on selected products during optimization
+  // Update progress based on selected products during optimization and translation
   useEffect(() => {
-    if (phase === 'optimizing') {
+    if (phase === 'optimizing' || phase === 'translating') {
       const interval = setInterval(() => {
         fetchUpdatedProducts()
       }, 1000) // Check every second
@@ -205,6 +207,18 @@ export default function Home() {
       return () => clearInterval(interval)
     }
   }, [optimizationStartTime, phase])
+
+  // Update timer display during translation
+  useEffect(() => {
+    if (translationStartTime && phase === 'translating') {
+      const interval = setInterval(() => {
+        // Force re-render to update timer
+        setProgress(prev => ({ ...prev }))
+      }, 1000)
+      
+      return () => clearInterval(interval)
+    }
+  }, [translationStartTime, phase])
 
   // Cleanup SSE on unmount
   useEffect(() => {
@@ -480,6 +494,48 @@ export default function Home() {
   const handleTranslateSpecific = async (language: 'no' | 'da') => {
     if (!batchId || selectedIds.size === 0) return
 
+    // 1. Show progress UI immediately
+    setPhase('translating')
+    setTranslationLanguage(language)
+    setTranslateAlert(`✅ Översättning till ${language.toUpperCase()} startad!`)
+    setTranslationStartTime(Date.now())
+    
+    // 2. Start SSE connection before POST
+    if (eventSourceRef.current) {
+      eventSourceRef.current.close()
+    }
+    
+    const eventSource = new EventSource(`/api/batches/${batchId}/events?selectedIndices=${Array.from(selectedIds).join(',')}`)
+    eventSourceRef.current = eventSource
+
+    eventSource.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data)
+        if (data.type === 'progress') {
+          setProgress(data.data)
+        } else if (data.type === 'end') {
+          eventSource.close()
+          eventSourceRef.current = null
+          setPhase('readyToExport')
+          setTranslateAlert(`✅ Översättning till ${language.toUpperCase()} klar!`)
+          setTranslationStartTime(null)
+          setTranslationLanguage(null)
+          
+          // Fetch updated products to show the translation results
+          fetchUpdatedProducts()
+        }
+      } catch (err) {
+        console.error('Fel vid parsing av SSE-data:', err)
+      }
+    }
+
+    eventSource.onerror = () => {
+      eventSource.close()
+      eventSourceRef.current = null
+      setTranslateAlert('❌ Fel vid SSE-anslutning')
+    }
+
+    // 3. Fire-and-forget the POST request
     try {
       const selectedProductIds = Array.from(selectedIds).map(index => parsedProducts[index]?.id).filter(Boolean)
       
@@ -507,15 +563,22 @@ export default function Home() {
         })
       })
 
-      if (response.ok) {
-        setPhase('translating')
-        setTranslateAlert(`✅ Översättning till ${language.toUpperCase()} startad!`)
-      } else {
+      if (!response.ok) {
         const errorData = await response.json()
         setTranslateAlert(`❌ Fel vid start av översättning: ${errorData.error || 'Okänt fel'}`)
+        eventSource.close()
+        eventSourceRef.current = null
+        setPhase('readyToExport') // Reset phase on error
+        setTranslationStartTime(null)
+        setTranslationLanguage(null)
       }
     } catch (err) {
       setTranslateAlert('❌ Fel vid start av översättning: Nätverksfel')
+      eventSource.close()
+      eventSourceRef.current = null
+      setPhase('readyToExport') // Reset phase on error
+      setTranslationStartTime(null)
+      setTranslationLanguage(null)
     }
   }
 
@@ -593,6 +656,14 @@ export default function Home() {
     return `${minutes}:${seconds.toString().padStart(2, '0')}`
   }
 
+  const getTranslationElapsedTime = () => {
+    if (!translationStartTime) return ''
+    const elapsed = Math.floor((Date.now() - translationStartTime) / 1000)
+    const minutes = Math.floor(elapsed / 60)
+    const seconds = elapsed % 60
+    return `${minutes}:${seconds.toString().padStart(2, '0')}`
+  }
+
   const getProductStatus = (product: Product) => {
     if (!product.optimized_sv || !product.optimized_sv.trim()) {
       return 'pending'
@@ -601,6 +672,10 @@ export default function Home() {
     const hasNo = product.translated_no && product.translated_no.trim()
     const hasDa = product.translated_da && product.translated_da.trim()
     
+    // Status enligt nya regler:
+    // SV optimerad, NO/DK saknas → optimized
+    // NO finns, DK saknas → translated (no)
+    // NO & DK finns → translated (no, dk)
     if (hasNo && hasDa) {
       return 'translated (no, dk)'
     } else if (hasNo) {
@@ -610,13 +685,13 @@ export default function Home() {
     }
   }
 
-  const handleCellClick = (product: Product, field: 'description_sv' | 'optimized_sv' | 'translated_no') => {
+  const handleCellClick = (product: Product, field: 'description_sv' | 'optimized_sv' | 'translated_no' | 'translated_da') => {
     setDrawerProduct(product)
     setDrawerField(field)
     setIsDrawerOpen(true)
   }
 
-  const handleSave = async (productId: string, updates: { description_sv?: string; description_no?: string; optimized_sv?: string }) => {
+  const handleSave = async (productId: string, updates: { description_sv?: string; description_no?: string; description_da?: string; optimized_sv?: string }) => {
     try {
       const response = await fetch(`/api/products/${productId}`, {
         method: 'PATCH',
@@ -638,6 +713,9 @@ export default function Home() {
             }
             if (updates.description_no !== undefined) {
               updatedProduct.translated_no = updates.description_no
+            }
+            if (updates.description_da !== undefined) {
+              updatedProduct.translated_da = updates.description_da
             }
             if (updates.optimized_sv !== undefined) {
               updatedProduct.optimized_sv = updates.optimized_sv
@@ -754,7 +832,9 @@ export default function Home() {
             prev.map((product, index) => ({
               ...product,
               status: batchData.products[index]?.status || product.status,
-              optimized_sv: batchData.products[index]?.optimized_sv || product.optimized_sv
+              optimized_sv: batchData.products[index]?.optimized_sv || product.optimized_sv,
+              translated_no: batchData.products[index]?.translated_no || product.translated_no,
+              translated_da: batchData.products[index]?.translated_da || product.translated_da
             }))
           )
         }
@@ -1316,6 +1396,34 @@ export default function Home() {
                 )}
               </div>
             )}
+
+            {phase === 'translating' && (
+              <div className="space-y-3">
+                <div className="w-full bg-gray-200 rounded-full h-2.5">
+                  <div 
+                    className="bg-blue-600 h-2.5 rounded-full transition-all duration-300" 
+                    style={{ width: `${progress.percent}%` }}
+                  ></div>
+                </div>
+                <div className="flex justify-between items-center text-sm text-gray-600">
+                  <span>
+                    {progress.percent}% klart ({progress.done || 0}/{progress.total || 0} produkter)
+                  </span>
+                  {translationStartTime && (
+                    <span className="font-mono">
+                      Tid: {getTranslationElapsedTime()}
+                    </span>
+                  )}
+                </div>
+                {progress.counts && (
+                  <div className="grid grid-cols-3 gap-4 text-sm">
+                    <div>Väntar: {progress.counts.pending}</div>
+                    <div>Översätter: {progress.counts.translating}</div>
+                    <div>Klar: {progress.counts.completed}</div>
+                  </div>
+                )}
+              </div>
+            )}
             
             {optimizeAlert && (
               <p className={`text-sm ${optimizeAlert.startsWith('✅') ? 'text-green-600' : 'text-red-600'}`}>
@@ -1366,8 +1474,8 @@ export default function Home() {
                         <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">PRODUKTNAMN</th>
                         <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">BESKRIVNING (SV)</th>
                         <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">OPTIMERAD TEXT (SV)</th>
-                        <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">BESKRIVNING (NO)</th>
-                        <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">BESKRIVNING (DK)</th>
+                        <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">OPTIMERAD TEXT (NO)</th>
+                        <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">OPTIMERAD TEXT (DK)</th>
                         <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-20">STATUS</th>
                       </tr>
                     </thead>
@@ -1430,7 +1538,11 @@ export default function Home() {
                           </td>
                           <td className="px-2 py-1 text-xs text-gray-500">
                             {product.translated_da ? (
-                              <div className="truncate">
+                              <div 
+                                className="cursor-pointer hover:bg-gray-100 truncate"
+                                onClick={() => handleCellClick(product, 'translated_da' as any)}
+                                title="Klicka för att redigera"
+                              >
                                 {product.translated_da.length > 40 
                                   ? `${product.translated_da.substring(0, 40)}...` 
                                   : product.translated_da}
