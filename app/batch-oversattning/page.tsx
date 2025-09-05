@@ -41,6 +41,17 @@ interface Upload {
   updated_at: string;
 }
 
+interface Batch {
+  id: string;
+  filename: string;
+  upload_date: string;
+  total_products: number;
+  status: string;
+  created_at: string;
+  upload_id: string;
+  products: Product[];
+}
+
 interface PromptSettings {
   optimize: {
     system: string;
@@ -69,6 +80,12 @@ export default function Home() {
   const [uploads, setUploads] = useState<Upload[]>([])
   const [selectedUpload, setSelectedUpload] = useState<Upload | null>(null)
   const [uploadId, setUploadId] = useState<string>('')
+  const [batches, setBatches] = useState<Batch[]>([])
+  const [selectedBatch, setSelectedBatch] = useState<Batch | null>(null)
+  const [availableBatches, setAvailableBatches] = useState<Batch[]>([])
+  const [isRegenerating, setIsRegenerating] = useState(false)
+  const [regenerateScope, setRegenerateScope] = useState<'all' | 'selected'>('all')
+  const [showRegenerateModal, setShowRegenerateModal] = useState(false)
   const [progress, setProgress] = useState<Progress>({
     percent: 0,
     counts: { pending: 0, optimizing: 0, optimized: 0, translating: 0, completed: 0, error: 0 }
@@ -124,21 +141,29 @@ export default function Home() {
     setOpenaiMode(mode)
   }, [])
 
-  // Load existing uploads on mount
+  // Load existing uploads and batches on mount
   useEffect(() => {
-    const loadUploads = async () => {
+    const loadData = async () => {
       try {
-        const response = await fetch('/api/uploads')
-        if (response.ok) {
-          const uploadsData = await response.json()
+        // Load uploads
+        const uploadsResponse = await fetch('/api/uploads')
+        if (uploadsResponse.ok) {
+          const uploadsData = await uploadsResponse.json()
           setUploads(uploadsData)
         }
+
+        // Load batches
+        const batchesResponse = await fetch('/api/batches')
+        if (batchesResponse.ok) {
+          const batchesData = await batchesResponse.json()
+          setBatches(batchesData)
+        }
       } catch (err) {
-        console.error('Failed to load uploads:', err)
+        console.error('Failed to load data:', err)
       }
     }
     
-    loadUploads()
+    loadData()
   }, [])
 
   // Debounced save to localStorage
@@ -211,25 +236,60 @@ export default function Home() {
 
   const handleUploadSelect = async (upload: Upload) => {
     setSelectedUpload(upload)
+    setSelectedBatch(null) // Clear batch selection
     setUploadId(upload.id)
     setFile(null)
     setError('')
     setUploadAlert('')
     
+    // Filter batches for this upload
+    const uploadBatches = batches.filter(batch => batch.upload_id === upload.id)
+    setAvailableBatches(uploadBatches)
+    
+    // If no batches exist for this upload, load products directly
+    if (uploadBatches.length === 0) {
+      try {
+        const response = await fetch(`/api/uploads/${upload.id}/products`)
+        if (response.ok) {
+          const data = await response.json()
+          setParsedProducts(data.products)
+          setProductsCount(data.products.length)
+          setSelectedIds(new Set(data.products.map((_: any, index: number) => index)))
+          setPhase('uploaded')
+          setUploadAlert(`✅ Upload vald: ${upload.filename} (${data.products.length} produkter)`)
+        } else {
+          setUploadAlert('❌ Fel vid hämtning av upload-produkter')
+        }
+      } catch (err) {
+        setUploadAlert('❌ Fel vid hämtning av upload-produkter: Nätverksfel')
+      }
+    } else {
+      setUploadAlert(`✅ Upload vald: ${upload.filename}. Välj batch nedan.`)
+    }
+  }
+
+  const handleBatchSelect = async (batch: Batch) => {
+    setSelectedBatch(batch)
+    setSelectedUpload(null) // Clear upload selection
+    setFile(null)
+    setError('')
+    setUploadAlert('')
+    
     try {
-      const response = await fetch(`/api/uploads/${upload.id}/products`)
+      const response = await fetch(`/api/batches/${batch.id}`)
       if (response.ok) {
         const data = await response.json()
         setParsedProducts(data.products)
         setProductsCount(data.products.length)
         setSelectedIds(new Set(data.products.map((_: any, index: number) => index)))
-        setPhase('uploaded')
-        setUploadAlert(`✅ Upload vald: ${upload.filename} (${data.products.length} produkter)`)
+        setBatchId(batch.id)
+        setPhase('readyToExport') // Skip to ready state since batch already exists
+        setUploadAlert(`✅ Batch vald: ${batch.filename} (${data.products.length} produkter)`)
       } else {
-        setUploadAlert('❌ Fel vid hämtning av upload-produkter')
+        setUploadAlert('❌ Fel vid hämtning av batch-produkter')
       }
     } catch (err) {
-      setUploadAlert('❌ Fel vid hämtning av upload-produkter: Nätverksfel')
+      setUploadAlert('❌ Fel vid hämtning av batch-produkter: Nätverksfel')
     }
   }
 
@@ -540,6 +600,88 @@ export default function Home() {
     setDrawerField(null)
   }
 
+  const handleRegenerate = async () => {
+    if (!batchId) return
+
+    setIsRegenerating(true)
+    setShowRegenerateModal(false)
+    
+    try {
+      const itemIds = regenerateScope === 'selected' 
+        ? Array.from(selectedIds).map(index => parsedProducts[index]?.id).filter(Boolean)
+        : undefined
+
+      const response = await fetch(`/api/batches/${batchId}/regenerate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          itemIds,
+          clientPromptSettings: {
+            optimize: {
+              system: promptSettings.optimize.system,
+              headers: promptSettings.optimize.headers,
+              maxWords: promptSettings.optimize.maxWords,
+              temperature: promptSettings.optimize.temperature,
+              model: promptSettings.optimize.model,
+              toneDefault: promptSettings.optimize.toneDefault
+            },
+            translate: {
+              system: promptSettings.translate.system,
+              temperature: promptSettings.translate.temperature,
+              model: promptSettings.translate.model
+            }
+          }
+        })
+      })
+
+      if (response.ok) {
+        setOptimizeAlert('✅ Regenerering startad! Följer framsteg...')
+        setPhase('optimizing')
+        setOptimizationStartTime(Date.now())
+        
+        // Start SSE connection for progress
+        if (eventSourceRef.current) {
+          eventSourceRef.current.close()
+        }
+        
+        const eventSource = new EventSource(`/api/batches/${batchId}/events?selectedIndices=${Array.from(selectedIds).join(',')}`)
+        eventSourceRef.current = eventSource
+
+        eventSource.onmessage = (event) => {
+          try {
+            const data = JSON.parse(event.data)
+            if (data.type === 'progress') {
+              setProgress(data.data)
+            } else if (data.type === 'end') {
+              eventSource.close()
+              eventSourceRef.current = null
+              setPhase('readyToExport')
+              setOptimizeAlert('✅ Regenerering klar!')
+              setOptimizationStartTime(null)
+              setIsRegenerating(false)
+            }
+          } catch (err) {
+            console.error('Fel vid parsing av SSE-data:', err)
+          }
+        }
+
+        eventSource.onerror = () => {
+          eventSource.close()
+          eventSourceRef.current = null
+          setOptimizeAlert('❌ Fel vid SSE-anslutning')
+          setIsRegenerating(false)
+        }
+      } else {
+        const errorData = await response.json()
+        setOptimizeAlert(`❌ Fel vid start av regenerering: ${errorData.error || 'Okänt fel'}`)
+        setIsRegenerating(false)
+      }
+    } catch (err) {
+      setOptimizeAlert('❌ Fel vid start av regenerering: Nätverksfel')
+      setIsRegenerating(false)
+    }
+  }
+
   // Function to fetch updated products from backend
   const fetchUpdatedProducts = async () => {
     if (!batchId) return
@@ -589,13 +731,16 @@ export default function Home() {
                       handleUploadSelect(upload)
                     } else {
                       setSelectedUpload(null)
+                      setSelectedBatch(null)
                       setUploadId('')
                       setParsedProducts([])
                       setSelectedIds(new Set())
                       setPhase('idle')
+                      setAvailableBatches([])
                     }
                   }}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  disabled={selectedBatch !== null}
                 >
                   <option value="">-- Välj befintlig upload --</option>
                   {uploads.map((upload) => (
@@ -616,7 +761,49 @@ export default function Home() {
               </div>
             )}
 
-            <div className="text-center text-gray-500">eller</div>
+            {/* Befintliga batchar för vald upload */}
+            {selectedUpload && availableBatches.length > 0 && (
+              <div className="space-y-2">
+                <label className="block text-sm font-medium text-gray-700">
+                  Befintliga batchar för {selectedUpload.filename}:
+                </label>
+                <select
+                  value={selectedBatch?.id || ''}
+                  onChange={(e) => {
+                    const batch = availableBatches.find(b => b.id === e.target.value)
+                    if (batch) {
+                      handleBatchSelect(batch)
+                    } else {
+                      setSelectedBatch(null)
+                      setBatchId('')
+                      setParsedProducts([])
+                      setSelectedIds(new Set())
+                      setPhase('idle')
+                    }
+                  }}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">-- Välj befintlig batch --</option>
+                  {availableBatches.map((batch) => (
+                    <option key={batch.id} value={batch.id}>
+                      {batch.filename} ({batch.total_products} produkter, status: {batch.status})
+                    </option>
+                  ))}
+                </select>
+                {selectedBatch && (
+                  <div className="text-sm text-gray-600 bg-gray-50 p-2 rounded">
+                    <p><strong>Batch:</strong> {selectedBatch.filename}</p>
+                    <p><strong>Skapad:</strong> {new Date(selectedBatch.created_at).toLocaleString('sv-SE')}</p>
+                    <p><strong>Totalt produkter:</strong> {selectedBatch.total_products}</p>
+                    <p><strong>Status:</strong> {selectedBatch.status}</p>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {uploads.length > 0 && (
+              <div className="text-center text-gray-500">eller</div>
+            )}
 
             {/* Ny fil-upload */}
             <div className="space-y-2">
@@ -627,7 +814,8 @@ export default function Home() {
                 type="file"
                 accept=".xlsx"
                 onChange={handleFileChange}
-                className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+                disabled={selectedBatch !== null}
+                className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 disabled:opacity-50 disabled:cursor-not-allowed"
               />
               {file && (
                 <p className="text-sm text-gray-600">
@@ -639,11 +827,16 @@ export default function Home() {
               )}
               <button
                 onClick={handleUpload}
-                disabled={!file}
+                disabled={!file || selectedBatch !== null}
                 className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
               >
                 Ladda upp ny fil
               </button>
+              {selectedBatch && (
+                <p className="text-sm text-gray-500">
+                  Filuppladdning inaktiverad när batch är vald
+                </p>
+              )}
             </div>
 
             {uploadAlert && (
@@ -990,13 +1183,25 @@ export default function Home() {
         <div className="bg-white rounded-lg shadow-md p-6 mb-6">
           <h2 className="text-xl font-semibold mb-4">D) Optimera (Svenska)</h2>
           <div className="space-y-4">
-            <button
-              onClick={handleOptimize}
-              disabled={!batchId || phase === 'optimizing'}
-              className="bg-purple-600 text-white px-4 py-2 rounded-md hover:bg-purple-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
-            >
-              Optimera (SV)
-            </button>
+            <div className="flex gap-4">
+              <button
+                onClick={handleOptimize}
+                disabled={!batchId || phase === 'optimizing'}
+                className="bg-purple-600 text-white px-4 py-2 rounded-md hover:bg-purple-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
+              >
+                Optimera (SV)
+              </button>
+              
+              {selectedBatch && (
+                <button
+                  onClick={() => setShowRegenerateModal(true)}
+                  disabled={!batchId || isRegenerating}
+                  className="bg-orange-600 text-white px-4 py-2 rounded-md hover:bg-orange-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
+                >
+                  {isRegenerating ? 'Regenererar...' : 'Regenerera texter'}
+                </button>
+              )}
+            </div>
             
             {/* Debug info */}
             <div className="mt-2 p-2 bg-gray-100 rounded text-xs">
@@ -1044,50 +1249,110 @@ export default function Home() {
             {/* Visa optimerade produkter */}
             {phase === 'readyToExport' && (
               <div className="mt-4 p-4 bg-gray-50 rounded-lg">
-                <h3 className="font-medium mb-2">Optimerade produkter (klicka för att expandera):</h3>
-                <div className="space-y-2 max-h-96 overflow-y-auto">
-                  {Array.from(selectedIds).map((index) => {
-                    const product = parsedProducts[index];
-                    if (!product) return null;
-                    const isExpanded = expandedProducts.has(index);
-                    return (
-                      <div 
-                        key={index} 
-                        className="text-xs bg-white p-3 rounded border cursor-pointer hover:bg-gray-50 transition-colors"
-                        onClick={() => toggleProductExpansion(index)}
-                        title="Klicka för att expandera/kollapsa"
-                      >
-                        <div className="font-medium flex items-center justify-between">
-                          <span>{product.name_sv}</span>
-                          <span className="text-gray-400">
-                            {isExpanded ? '▼' : '▶'}
-                          </span>
-                        </div>
-                        {isExpanded && product.optimized_sv ? (
-                          <div className="mt-2 text-gray-700 whitespace-pre-wrap">
+                <h3 className="font-medium mb-4">Optimerade produkter ({selectedIds.size} av {parsedProducts.length})</h3>
+                
+                {/* Urvalsknappar */}
+                <div className="flex flex-wrap gap-2 mb-4">
+                  <button
+                    onClick={handleSelectAll}
+                    className="bg-blue-600 text-white px-3 py-1 rounded-md hover:bg-blue-700 text-sm"
+                  >
+                    Välj alla
+                  </button>
+                  <button
+                    onClick={handleDeselectAll}
+                    className="bg-gray-600 text-white px-3 py-1 rounded-md hover:bg-gray-700 text-sm"
+                  >
+                    Avmarkera alla
+                  </button>
+                </div>
+
+                {/* Produktlista */}
+                <div className="max-h-96 overflow-y-auto border border-gray-200 rounded-md">
+                  <table className="w-full text-xs">
+                    <thead className="bg-gray-50 sticky top-0">
+                      <tr>
+                        <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-8">
+                          <input
+                            type="checkbox"
+                            checked={selectedIds.size === parsedProducts.length && parsedProducts.length > 0}
+                            onChange={selectedIds.size === parsedProducts.length ? handleDeselectAll : handleSelectAll}
+                            className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                          />
+                        </th>
+                        <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">PRODUKTNAMN</th>
+                        <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">BESKRIVNING</th>
+                        <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">OPTIMERAD TEXT</th>
+                        <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-20">STATUS</th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                      {parsedProducts.slice(0, visibleRows).map((product, index) => (
+                        <tr key={index} className="hover:bg-gray-50">
+                          <td className="px-2 py-1">
+                            <input
+                              type="checkbox"
+                              checked={selectedIds.has(index)}
+                              onChange={() => handleProductToggle(index)}
+                              className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                            />
+                          </td>
+                          <td className="px-2 py-1 text-xs font-bold text-gray-900">
+                            <div className="truncate" title={product.name_sv}>
+                              {product.name_sv}
+                            </div>
+                          </td>
+                          <td className="px-2 py-1 text-xs text-gray-500">
                             <div 
-                              className="cursor-pointer hover:bg-gray-100 p-2 rounded"
-                              onClick={() => handleCellClick(product, 'optimized_sv')}
+                              className="cursor-pointer hover:bg-gray-100 truncate"
+                              onClick={() => handleCellClick(product, 'description_sv')}
                               title="Klicka för att redigera"
                             >
-                              <div dangerouslySetInnerHTML={{ 
-                                __html: formatOptimizedText(product.optimized_sv) 
-                              }} />
+                              {product.description_sv.length > 40 
+                                ? `${product.description_sv.substring(0, 40)}...` 
+                                : product.description_sv}
                             </div>
-                          </div>
-                        ) : (
-                          <div 
-                            className="text-gray-500 truncate cursor-pointer hover:bg-gray-100 p-2 rounded"
-                            onClick={() => handleCellClick(product, 'description_sv')}
-                            title="Klicka för att redigera"
-                          >
-                            {product.optimized_sv ? 'Klicka för att se optimerad text...' : 'Inte optimerad än'}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
+                          </td>
+                          <td className="px-2 py-1 text-xs text-gray-500">
+                            {product.optimized_sv ? (
+                              <div 
+                                className="cursor-pointer hover:bg-gray-100 truncate"
+                                onClick={() => handleCellClick(product, 'optimized_sv')}
+                                title="Klicka för att redigera"
+                              >
+                                <div className="truncate" dangerouslySetInnerHTML={{ 
+                                  __html: formatOptimizedText(product.optimized_sv.substring(0, 40) + (product.optimized_sv.length > 40 ? '...' : ''))
+                                }} />
+                              </div>
+                            ) : (
+                              <span className="text-gray-400">-</span>
+                            )}
+                          </td>
+                          <td className="px-2 py-1 text-xs text-gray-700">
+                            {product.status === 'optimized' ? 'optimized' : 
+                             product.status === 'optimizing' ? 'optimizing' :
+                             product.status === 'error' ? 'error' : 'pending'}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
+                
+                {/* Visa fler-knapp */}
+                {visibleRows < parsedProducts.length && (
+                  <div className="text-center mt-4">
+                    <button
+                      onClick={handleShowMore}
+                      className="bg-gray-600 text-white px-4 py-2 rounded-md hover:bg-gray-700 text-sm"
+                    >
+                      Visa fler ({Math.min(200, parsedProducts.length - visibleRows)} till)
+                    </button>
+                    <p className="text-xs text-gray-500 mt-1">
+                      Visar {Math.min(visibleRows, parsedProducts.length)} av {parsedProducts.length} produkter
+                    </p>
+                  </div>
+                )}
               </div>
             )}
             
@@ -1165,6 +1430,58 @@ export default function Home() {
             <strong>TODO:</strong> add e2e/UI tests in next step
           </p>
         </div>
+
+        {/* Regenerate Modal */}
+        {showRegenerateModal && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+              <h3 className="text-lg font-semibold mb-4">Regenerera produkttexter</h3>
+              <p className="text-sm text-gray-600 mb-4">
+                Välj om du vill regenerera texter för hela batchen eller endast markerade produkter.
+              </p>
+              
+              <div className="space-y-3 mb-6">
+                <label className="flex items-center">
+                  <input
+                    type="radio"
+                    name="regenerateScope"
+                    value="all"
+                    checked={regenerateScope === 'all'}
+                    onChange={(e) => setRegenerateScope(e.target.value as 'all' | 'selected')}
+                    className="mr-2"
+                  />
+                  Hela batchen ({parsedProducts.length} produkter)
+                </label>
+                <label className="flex items-center">
+                  <input
+                    type="radio"
+                    name="regenerateScope"
+                    value="selected"
+                    checked={regenerateScope === 'selected'}
+                    onChange={(e) => setRegenerateScope(e.target.value as 'all' | 'selected')}
+                    className="mr-2"
+                  />
+                  Endast markerade produkter ({selectedIds.size} produkter)
+                </label>
+              </div>
+              
+              <div className="flex gap-3">
+                <button
+                  onClick={handleRegenerate}
+                  className="bg-orange-600 text-white px-4 py-2 rounded-md hover:bg-orange-700"
+                >
+                  Regenerera
+                </button>
+                <button
+                  onClick={() => setShowRegenerateModal(false)}
+                  className="bg-gray-600 text-white px-4 py-2 rounded-md hover:bg-gray-700"
+                >
+                  Avbryt
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Product Drawer */}
         <ProductDrawer
