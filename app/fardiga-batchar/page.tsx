@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import ProductDrawer from '../components/ProductDrawer'
 
 interface Product {
   id: string
@@ -26,6 +27,9 @@ export default function FardigaBatcharPage() {
   const [selectedBatch, setSelectedBatch] = useState<Batch | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string>('')
+  const [drawerProduct, setDrawerProduct] = useState<Product | null>(null)
+  const [drawerField, setDrawerField] = useState<'description_sv' | 'optimized_sv' | 'translated_no' | null>(null)
+  const [isDrawerOpen, setIsDrawerOpen] = useState(false)
 
   // Load completed batches on mount
   useEffect(() => {
@@ -71,6 +75,56 @@ export default function FardigaBatcharPage() {
     } catch (err) {
       setError('Nätverksfel vid hämtning av batch-detaljer')
     }
+  }
+
+  const handleCellClick = (product: Product, field: 'description_sv' | 'optimized_sv' | 'translated_no') => {
+    setDrawerProduct(product)
+    setDrawerField(field)
+    setIsDrawerOpen(true)
+  }
+
+  const handleSave = async (productId: string, updates: { description_sv?: string; description_no?: string; optimized_sv?: string }) => {
+    try {
+      const response = await fetch(`/api/products/${productId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updates)
+      })
+
+      if (!response.ok) {
+        throw new Error('Failed to save product')
+      }
+
+      // Update the product in the current batch
+      if (selectedBatch) {
+        const updatedProducts = selectedBatch.products.map(p => {
+          if (p.id === productId) {
+            const updatedProduct = { ...p }
+            if (updates.description_sv !== undefined) {
+              updatedProduct.description_sv = updates.description_sv
+            }
+            if (updates.description_no !== undefined) {
+              updatedProduct.translated_no = updates.description_no
+            }
+            if (updates.optimized_sv !== undefined) {
+              updatedProduct.optimized_sv = updates.optimized_sv
+            }
+            return updatedProduct
+          }
+          return p
+        })
+        setSelectedBatch({ ...selectedBatch, products: updatedProducts })
+      }
+    } catch (error) {
+      console.error('Save failed:', error)
+      throw error
+    }
+  }
+
+  const handleDrawerClose = () => {
+    setIsDrawerOpen(false)
+    setDrawerProduct(null)
+    setDrawerField(null)
   }
 
   return (
@@ -146,17 +200,29 @@ export default function FardigaBatcharPage() {
                           {product.id}
                         </td>
                         <td className="border border-gray-300 px-4 py-2 text-sm">
-                          <div className="max-w-xs truncate" title={product.description_sv}>
+                          <div 
+                            className="truncate-cell" 
+                            title={product.description_sv}
+                            onClick={() => handleCellClick(product, 'description_sv')}
+                          >
                             {product.description_sv}
                           </div>
                         </td>
                         <td className="border border-gray-300 px-4 py-2 text-sm">
-                          <div className="max-w-xs truncate" title={product.optimized_sv || ''}>
+                          <div 
+                            className="truncate-cell" 
+                            title={product.optimized_sv || ''}
+                            onClick={() => handleCellClick(product, 'optimized_sv')}
+                          >
                             {product.optimized_sv || '-'}
                           </div>
                         </td>
                         <td className="border border-gray-300 px-4 py-2 text-sm">
-                          <div className="max-w-xs truncate" title={product.translated_no || ''}>
+                          <div 
+                            className="truncate-cell" 
+                            title={product.translated_no || ''}
+                            onClick={() => handleCellClick(product, 'translated_no')}
+                          >
                             {product.translated_no || '-'}
                           </div>
                         </td>
@@ -173,6 +239,15 @@ export default function FardigaBatcharPage() {
             )}
           </div>
         )}
+
+        {/* Product Drawer */}
+        <ProductDrawer
+          product={drawerProduct}
+          field={drawerField}
+          isOpen={isDrawerOpen}
+          onClose={handleDrawerClose}
+          onSave={handleSave}
+        />
       </div>
     </div>
   )

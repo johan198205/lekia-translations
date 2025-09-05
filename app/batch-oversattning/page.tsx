@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
+import ProductDrawer from '../components/ProductDrawer'
 
 interface Progress {
   percent: number
@@ -17,12 +18,14 @@ interface Progress {
 }
 
 interface Product {
-  id?: string;
+  id: string;
   name_sv: string;
   description_sv: string;
   attributes?: string;
   tone_hint?: string;
   optimized_sv?: string;
+  translated_da?: string;
+  translated_no?: string;
   status?: string;
   batch_id?: string;
 }
@@ -81,6 +84,9 @@ export default function Home() {
   const [openaiMode, setOpenaiMode] = useState<string>('stub')
   const [expandedProducts, setExpandedProducts] = useState<Set<number>>(new Set())
   const [optimizationStartTime, setOptimizationStartTime] = useState<number | null>(null)
+  const [drawerProduct, setDrawerProduct] = useState<Product | null>(null)
+  const [drawerField, setDrawerField] = useState<'description_sv' | 'optimized_sv' | 'translated_no' | null>(null)
+  const [isDrawerOpen, setIsDrawerOpen] = useState(false)
   
   // Prompt settings state
   const [promptSettings, setPromptSettings] = useState<PromptSettings>({
@@ -483,6 +489,55 @@ export default function Home() {
     const minutes = Math.floor(elapsed / 60)
     const seconds = elapsed % 60
     return `${minutes}:${seconds.toString().padStart(2, '0')}`
+  }
+
+  const handleCellClick = (product: Product, field: 'description_sv' | 'optimized_sv' | 'translated_no') => {
+    setDrawerProduct(product)
+    setDrawerField(field)
+    setIsDrawerOpen(true)
+  }
+
+  const handleSave = async (productId: string, updates: { description_sv?: string; description_no?: string; optimized_sv?: string }) => {
+    try {
+      const response = await fetch(`/api/products/${productId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updates)
+      })
+
+      if (!response.ok) {
+        throw new Error('Failed to save product')
+      }
+
+      // Update the product in the current parsed products
+      setParsedProducts(prev => 
+        prev.map(p => {
+          if (p.id === productId) {
+            const updatedProduct = { ...p }
+            if (updates.description_sv !== undefined) {
+              updatedProduct.description_sv = updates.description_sv
+            }
+            if (updates.description_no !== undefined) {
+              updatedProduct.translated_no = updates.description_no
+            }
+            if (updates.optimized_sv !== undefined) {
+              updatedProduct.optimized_sv = updates.optimized_sv
+            }
+            return updatedProduct
+          }
+          return p
+        })
+      )
+    } catch (error) {
+      console.error('Save failed:', error)
+      throw error
+    }
+  }
+
+  const handleDrawerClose = () => {
+    setIsDrawerOpen(false)
+    setDrawerProduct(null)
+    setDrawerField(null)
   }
 
   // Function to fetch updated products from backend
@@ -1010,12 +1065,22 @@ export default function Home() {
                         </div>
                         {isExpanded && product.optimized_sv ? (
                           <div className="mt-2 text-gray-700 whitespace-pre-wrap">
-                            <div dangerouslySetInnerHTML={{ 
-                              __html: formatOptimizedText(product.optimized_sv) 
-                            }} />
+                            <div 
+                              className="cursor-pointer hover:bg-gray-100 p-2 rounded"
+                              onClick={() => handleCellClick(product, 'optimized_sv')}
+                              title="Klicka för att redigera"
+                            >
+                              <div dangerouslySetInnerHTML={{ 
+                                __html: formatOptimizedText(product.optimized_sv) 
+                              }} />
+                            </div>
                           </div>
                         ) : (
-                          <div className="text-gray-500 truncate">
+                          <div 
+                            className="text-gray-500 truncate cursor-pointer hover:bg-gray-100 p-2 rounded"
+                            onClick={() => handleCellClick(product, 'description_sv')}
+                            title="Klicka för att redigera"
+                          >
                             {product.optimized_sv ? 'Klicka för att se optimerad text...' : 'Inte optimerad än'}
                           </div>
                         )}
@@ -1100,6 +1165,15 @@ export default function Home() {
             <strong>TODO:</strong> add e2e/UI tests in next step
           </p>
         </div>
+
+        {/* Product Drawer */}
+        <ProductDrawer
+          product={drawerProduct}
+          field={drawerField}
+          isOpen={isDrawerOpen}
+          onClose={handleDrawerClose}
+          onSave={handleSave}
+        />
       </div>
     </div>
   )

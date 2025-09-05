@@ -14,6 +14,9 @@ export async function GET(
   const encoder = new TextEncoder()
   const stream = new ReadableStream({
     async start(controller) {
+      // Declare heartbeatInterval at the top level
+      let heartbeatInterval: NodeJS.Timeout | null = null
+      
       try {
         // Send initial connection message
         controller.enqueue(encoder.encode('data: {"type":"connected"}\n\n'))
@@ -74,6 +77,7 @@ export async function GET(
         } catch (error) {
           console.error('Failed to get initial progress:', error)
         }
+
 
         // Poll database for progress updates every 2 seconds
         const progressInterval = setInterval(async () => {
@@ -148,37 +152,37 @@ export async function GET(
               console.log(`[EVENTS] Optimization complete for batch ${batchId}, closing stream`)
               controller.enqueue(encoder.encode('data: {"type":"end"}\n\n'))
               clearInterval(progressInterval)
-              clearInterval(heartbeatInterval)
+              if (heartbeatInterval) clearInterval(heartbeatInterval)
               controller.close()
             }
           } catch (error) {
             console.error('Progress monitoring error:', error)
             controller.enqueue(encoder.encode('data: {"type":"error","message":"Progress monitoring failed"}\n\n'))
             clearInterval(progressInterval)
-            clearInterval(heartbeatInterval)
+            if (heartbeatInterval) clearInterval(heartbeatInterval)
             controller.close()
           }
         }, 2000)
 
         // Send heartbeat every 30 seconds to keep connection alive
-        const heartbeatInterval = setInterval(() => {
+        heartbeatInterval = setInterval(() => {
           try {
             controller.enqueue(encoder.encode('data: {"type":"heartbeat"}\n\n'))
           } catch (error) {
             // Controller is closed, clear interval
-            clearInterval(heartbeatInterval)
+            if (heartbeatInterval) clearInterval(heartbeatInterval)
           }
         }, 30000)
 
         // Cleanup on client disconnect
         request.signal.addEventListener('abort', () => {
           clearInterval(progressInterval)
-          clearInterval(heartbeatInterval)
+          if (heartbeatInterval) clearInterval(heartbeatInterval)
           controller.close()
         })
       } catch (error) {
         controller.enqueue(encoder.encode('data: {"type":"error","message":"Failed to start monitoring"}\n\n'))
-        clearInterval(heartbeatInterval)
+        if (heartbeatInterval) clearInterval(heartbeatInterval)
         controller.close()
       }
     }
