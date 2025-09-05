@@ -9,7 +9,7 @@ export async function POST(
 ) {
   try {
     const { id: batchId } = await params
-    const { languages } = await request.json()
+    const { languages, selectedProductIds } = await request.json()
 
     if (!languages || !Array.isArray(languages) || languages.length === 0) {
       return NextResponse.json(
@@ -23,7 +23,12 @@ export async function POST(
       where: { id: batchId },
       include: { 
         products: {
-          where: { status: 'optimized' }
+          where: { 
+            status: 'optimized',
+            ...(selectedProductIds && selectedProductIds.length > 0 ? {
+              id: { in: selectedProductIds }
+            } : {})
+          }
         }
       }
     })

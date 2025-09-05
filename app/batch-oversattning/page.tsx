@@ -477,6 +477,48 @@ export default function Home() {
     }
   }
 
+  const handleTranslateSpecific = async (language: 'no' | 'da') => {
+    if (!batchId || selectedIds.size === 0) return
+
+    try {
+      const selectedProductIds = Array.from(selectedIds).map(index => parsedProducts[index]?.id).filter(Boolean)
+      
+      const response = await fetch(`/api/batches/${batchId}/translate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          languages: [language],
+          selectedProductIds,
+          clientPromptSettings: {
+            optimize: {
+              system: promptSettings.optimize.system,
+              headers: promptSettings.optimize.headers,
+              maxWords: promptSettings.optimize.maxWords,
+              temperature: promptSettings.optimize.temperature,
+              model: promptSettings.optimize.model,
+              toneDefault: promptSettings.optimize.toneDefault
+            },
+            translate: {
+              system: promptSettings.translate.system,
+              temperature: promptSettings.translate.temperature,
+              model: promptSettings.translate.model
+            }
+          }
+        })
+      })
+
+      if (response.ok) {
+        setPhase('translating')
+        setTranslateAlert(`✅ Översättning till ${language.toUpperCase()} startad!`)
+      } else {
+        const errorData = await response.json()
+        setTranslateAlert(`❌ Fel vid start av översättning: ${errorData.error || 'Okänt fel'}`)
+      }
+    } catch (err) {
+      setTranslateAlert('❌ Fel vid start av översättning: Nätverksfel')
+    }
+  }
+
   const handleExport = () => {
     if (!batchId) return
     
@@ -549,6 +591,23 @@ export default function Home() {
     const minutes = Math.floor(elapsed / 60)
     const seconds = elapsed % 60
     return `${minutes}:${seconds.toString().padStart(2, '0')}`
+  }
+
+  const getProductStatus = (product: Product) => {
+    if (!product.optimized_sv || !product.optimized_sv.trim()) {
+      return 'pending'
+    }
+    
+    const hasNo = product.translated_no && product.translated_no.trim()
+    const hasDa = product.translated_da && product.translated_da.trim()
+    
+    if (hasNo && hasDa) {
+      return 'translated (no, dk)'
+    } else if (hasNo) {
+      return 'translated (no)'
+    } else {
+      return 'optimized'
+    }
   }
 
   const handleCellClick = (product: Product, field: 'description_sv' | 'optimized_sv' | 'translated_no') => {
@@ -1179,9 +1238,9 @@ export default function Home() {
           </details>
         </div>
 
-        {/* D) Optimera-sektion */}
+        {/* D) Optimera & Översätt-sektion */}
         <div className="bg-white rounded-lg shadow-md p-6 mb-6">
-          <h2 className="text-xl font-semibold mb-4">D) Optimera (Svenska)</h2>
+          <h2 className="text-xl font-semibold mb-4">D) Optimera & Översätt</h2>
           <div className="space-y-4">
             <div className="flex gap-4">
               <button
@@ -1192,15 +1251,33 @@ export default function Home() {
                 Optimera (SV)
               </button>
               
-              {selectedBatch && (
-                <button
-                  onClick={() => setShowRegenerateModal(true)}
-                  disabled={!batchId || isRegenerating}
-                  className="bg-orange-600 text-white px-4 py-2 rounded-md hover:bg-orange-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
-                >
-                  {isRegenerating ? 'Regenererar...' : 'Regenerera texter'}
-                </button>
-              )}
+              {/* Översättningsknappar - visas endast om alla valda rader har optimerad svensk text */}
+              {(() => {
+                const selectedProducts = Array.from(selectedIds).map(index => parsedProducts[index]).filter(Boolean)
+                const allHaveOptimizedSv = selectedProducts.length > 0 && selectedProducts.every(p => p.optimized_sv && p.optimized_sv.trim())
+                const hasSelectedProducts = selectedIds.size > 0
+                
+                return (
+                  <>
+                    <button
+                      onClick={() => handleTranslateSpecific('no')}
+                      disabled={!batchId || !allHaveOptimizedSv || !hasSelectedProducts || phase === 'translating'}
+                      className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
+                      title={!allHaveOptimizedSv ? "Kräver optimerad svensk text" : ""}
+                    >
+                      Översätt till norska (NO)
+                    </button>
+                    <button
+                      onClick={() => handleTranslateSpecific('da')}
+                      disabled={!batchId || !allHaveOptimizedSv || !hasSelectedProducts || phase === 'translating'}
+                      className="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
+                      title={!allHaveOptimizedSv ? "Kräver optimerad svensk text" : ""}
+                    >
+                      Översätt till danska (DK)
+                    </button>
+                  </>
+                )
+              })()}
             </div>
             
             {/* Debug info */}
@@ -1246,6 +1323,12 @@ export default function Home() {
               </p>
             )}
             
+            {translateAlert && (
+              <p className={`text-sm ${translateAlert.startsWith('✅') ? 'text-green-600' : 'text-red-600'}`}>
+                {translateAlert}
+              </p>
+            )}
+            
             {/* Visa optimerade produkter */}
             {phase === 'readyToExport' && (
               <div className="mt-4 p-4 bg-gray-50 rounded-lg">
@@ -1281,8 +1364,10 @@ export default function Home() {
                           />
                         </th>
                         <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">PRODUKTNAMN</th>
-                        <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">BESKRIVNING</th>
-                        <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">OPTIMERAD TEXT</th>
+                        <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">BESKRIVNING (SV)</th>
+                        <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">OPTIMERAD TEXT (SV)</th>
+                        <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">BESKRIVNING (NO)</th>
+                        <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">BESKRIVNING (DK)</th>
                         <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-20">STATUS</th>
                       </tr>
                     </thead>
@@ -1328,10 +1413,34 @@ export default function Home() {
                               <span className="text-gray-400">-</span>
                             )}
                           </td>
+                          <td className="px-2 py-1 text-xs text-gray-500">
+                            {product.translated_no ? (
+                              <div 
+                                className="cursor-pointer hover:bg-gray-100 truncate"
+                                onClick={() => handleCellClick(product, 'translated_no')}
+                                title="Klicka för att redigera"
+                              >
+                                {product.translated_no.length > 40 
+                                  ? `${product.translated_no.substring(0, 40)}...` 
+                                  : product.translated_no}
+                              </div>
+                            ) : (
+                              <span className="text-gray-400">-</span>
+                            )}
+                          </td>
+                          <td className="px-2 py-1 text-xs text-gray-500">
+                            {product.translated_da ? (
+                              <div className="truncate">
+                                {product.translated_da.length > 40 
+                                  ? `${product.translated_da.substring(0, 40)}...` 
+                                  : product.translated_da}
+                              </div>
+                            ) : (
+                              <span className="text-gray-400">-</span>
+                            )}
+                          </td>
                           <td className="px-2 py-1 text-xs text-gray-700">
-                            {product.status === 'optimized' ? 'optimized' : 
-                             product.status === 'optimizing' ? 'optimizing' :
-                             product.status === 'error' ? 'error' : 'pending'}
+                            {getProductStatus(product)}
                           </td>
                         </tr>
                       ))}
@@ -1362,48 +1471,6 @@ export default function Home() {
           </div>
         </div>
 
-        {/* E) Översätt-sektion */}
-        <div className="bg-white rounded-lg shadow-md p-6 mb-6">
-          <h2 className="text-xl font-semibold mb-4">E) Översätt</h2>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <label className="flex items-center">
-                <input
-                  type="checkbox"
-                  checked={languages.has('da')}
-                  onChange={() => handleLanguageChange('da')}
-                  className="mr-2"
-                />
-                Danska (da)
-              </label>
-              <label className="flex items-center">
-                <input
-                  type="checkbox"
-                  checked={languages.has('no')}
-                  onChange={() => handleLanguageChange('no')}
-                  className="mr-2"
-                />
-                Norska (no)
-              </label>
-            </div>
-            <button
-              onClick={handleTranslate}
-              disabled={!batchId || phase !== 'readyToExport' || languages.size === 0}
-              className="bg-orange-600 text-white px-4 py-2 rounded-md hover:bg-orange-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
-            >
-              Översätt
-            </button>
-            {translateAlert && (
-              <p className={`text-sm ${translateAlert.startsWith('✅') ? 'text-green-600' : 'text-red-600'}`}>
-                {translateAlert}
-              </p>
-            )}
-            
-            <p className="text-xs text-gray-500">
-              Prompt-inställningar används lokalt (nästa steg kopplar in servern).
-            </p>
-          </div>
-        </div>
 
         {/* F) Export-sektion */}
         <div className="bg-white rounded-lg shadow-md p-6 mb-6">
