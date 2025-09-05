@@ -148,19 +148,26 @@ export async function GET(
               console.log(`[EVENTS] Optimization complete for batch ${batchId}, closing stream`)
               controller.enqueue(encoder.encode('data: {"type":"end"}\n\n'))
               clearInterval(progressInterval)
+              clearInterval(heartbeatInterval)
               controller.close()
             }
           } catch (error) {
             console.error('Progress monitoring error:', error)
             controller.enqueue(encoder.encode('data: {"type":"error","message":"Progress monitoring failed"}\n\n'))
             clearInterval(progressInterval)
+            clearInterval(heartbeatInterval)
             controller.close()
           }
         }, 2000)
 
         // Send heartbeat every 30 seconds to keep connection alive
         const heartbeatInterval = setInterval(() => {
-          controller.enqueue(encoder.encode('data: {"type":"heartbeat"}\n\n'))
+          try {
+            controller.enqueue(encoder.encode('data: {"type":"heartbeat"}\n\n'))
+          } catch (error) {
+            // Controller is closed, clear interval
+            clearInterval(heartbeatInterval)
+          }
         }, 30000)
 
         // Cleanup on client disconnect
@@ -171,6 +178,7 @@ export async function GET(
         })
       } catch (error) {
         controller.enqueue(encoder.encode('data: {"type":"error","message":"Failed to start monitoring"}\n\n'))
+        clearInterval(heartbeatInterval)
         controller.close()
       }
     }

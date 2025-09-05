@@ -25,8 +25,7 @@ export async function GET() {
     // Beräkna antal produkter kvar att optimera för varje upload
     const uploadsWithStats = uploads.map(upload => {
       const totalProducts = upload.products.length
-      const productsInBatches = upload.products.filter(p => p.batch_id !== null).length
-      const productsRemaining = totalProducts - productsInBatches
+      const productsRemaining = upload.products.filter(p => p.status === 'pending').length
       
       return {
         id: upload.id,

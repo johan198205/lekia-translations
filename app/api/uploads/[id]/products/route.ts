@@ -8,11 +8,12 @@ export async function GET(
   try {
     const { id: uploadId } = await params
 
-    // Hämta upload med produkter
+    // Hämta upload med produkter som behöver optimeras (endast pending)
     const upload = await prisma.upload.findUnique({
       where: { id: uploadId },
       include: {
         products: {
+          where: { status: 'pending' },
           orderBy: { created_at: 'asc' }
         }
       }
