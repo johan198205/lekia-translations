@@ -13,6 +13,13 @@ export async function GET() {
             batch_id: true
           }
         },
+        ui_items: {
+          select: {
+            id: true,
+            status: true,
+            batch_id: true
+          }
+        },
         batches: {
           select: {
             id: true,
@@ -22,21 +29,38 @@ export async function GET() {
       }
     })
 
-    // Beräkna antal produkter kvar att optimera för varje upload
+    // Beräkna antal produkter/UI-element kvar att bearbeta för varje upload
     const uploadsWithStats = uploads.map(upload => {
-      const totalProducts = upload.products.length
-      const productsRemaining = upload.products.filter(p => p.status === 'pending').length
-      
-      return {
-        id: upload.id,
-        filename: upload.filename,
-        upload_date: upload.upload_date,
-        total_products: totalProducts,
-        products_remaining: productsRemaining,
-        batches_count: upload.batches.length,
-        job_type: upload.job_type,
-        created_at: upload.created_at,
-        updated_at: upload.updated_at
+      if (upload.job_type === 'product_texts') {
+        const totalProducts = upload.products.length
+        const productsRemaining = upload.products.filter(p => p.status === 'pending').length
+        
+        return {
+          id: upload.id,
+          filename: upload.filename,
+          upload_date: upload.upload_date,
+          total_products: totalProducts,
+          products_remaining: productsRemaining,
+          batches_count: upload.batches.length,
+          job_type: upload.job_type,
+          created_at: upload.created_at,
+          updated_at: upload.updated_at
+        }
+      } else {
+        const totalUIItems = upload.ui_items.length
+        const uiItemsRemaining = upload.ui_items.filter(item => item.status === 'pending').length
+        
+        return {
+          id: upload.id,
+          filename: upload.filename,
+          upload_date: upload.upload_date,
+          total_products: totalUIItems,
+          products_remaining: uiItemsRemaining,
+          batches_count: upload.batches.length,
+          job_type: upload.job_type,
+          created_at: upload.created_at,
+          updated_at: upload.updated_at
+        }
       }
     })
 

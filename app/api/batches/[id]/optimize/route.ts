@@ -23,7 +23,10 @@ export async function POST(
     // Verify batch exists
     const batch = await prisma.productBatch.findUnique({
       where: { id: batchId },
-      include: { products: true }
+      include: { 
+        products: true,
+        ui_items: true
+      }
     })
 
     if (!batch) {
@@ -33,8 +36,9 @@ export async function POST(
       )
     }
 
-    console.log(`[OPTIMIZE] Batch found: ${batch.id}, products count: ${batch.products?.length || 0}`);
-    console.log(`[OPTIMIZE] Batch products:`, batch.products?.map(p => ({ id: p.id, name: p.name_sv, status: p.status })));
+    console.log(`[OPTIMIZE] Batch found: ${batch.id}, job_type: ${batch.job_type}`);
+    console.log(`[OPTIMIZE] Products count: ${batch.products?.length || 0}`);
+    console.log(`[OPTIMIZE] UI items count: ${batch.ui_items?.length || 0}`);
 
     // Update batch status
     await prisma.productBatch.update({
@@ -42,15 +46,39 @@ export async function POST(
       data: { status: 'running' }
     })
 
-    // Process optimization jobs directly (no queue needed for now)
-    const productsToOptimize = selectedIndices.length > 0 
-      ? selectedIndices.map(index => batch.products[index]).filter(Boolean)
-      : batch.products;
+    let productsToOptimize: any[] = []
     
-    console.log(`[OPTIMIZE] Starting optimization for ${productsToOptimize.length} products`);
-    console.log(`[OPTIMIZE] Selected indices:`, selectedIndices);
-    console.log(`[OPTIMIZE] Batch products count:`, batch.products.length);
-    console.log(`[OPTIMIZE] Products to optimize:`, productsToOptimize.map(p => ({ id: p.id, name: p.name_sv, index: batch.products.findIndex(bp => bp.id === p.id) })));
+    if (batch.job_type === 'product_texts') {
+      // Process optimization jobs for products
+      productsToOptimize = selectedIndices.length > 0 
+        ? selectedIndices.map(index => batch.products[index]).filter(Boolean)
+        : batch.products;
+      
+      console.log(`[OPTIMIZE] Starting optimization for ${productsToOptimize.length} products`);
+      console.log(`[OPTIMIZE] Selected indices:`, selectedIndices);
+      console.log(`[OPTIMIZE] Batch products count:`, batch.products.length);
+      console.log(`[OPTIMIZE] Products to optimize:`, productsToOptimize.map(p => ({ id: p.id, name: p.name_sv, index: batch.products.findIndex(bp => bp.id === p.id) })));
+    } else {
+      // For UI elements, we don't need optimization - they're already ready
+      console.log(`[OPTIMIZE] UI elements batch - no optimization needed, marking as completed`);
+      
+      // Mark all UI items as completed
+      await prisma.uIItem.updateMany({
+        where: { 
+          batch_id: batchId,
+          status: 'pending'
+        },
+        data: { status: 'completed' }
+      })
+
+      // Mark batch as completed
+      await prisma.productBatch.update({
+        where: { id: batchId },
+        data: { status: 'completed' }
+      })
+
+      return NextResponse.json({ message: 'UI elements batch completed' })
+    }
     
     // Process each product directly
     for (let i = 0; i < productsToOptimize.length; i++) {

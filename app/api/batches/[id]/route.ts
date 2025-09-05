@@ -10,7 +10,7 @@ export async function GET(
   try {
     const { id: batchId } = await params
 
-    // Get batch with products
+    // Get batch with products or UI items
     const batch = await prisma.productBatch.findUnique({
       where: { id: batchId },
       include: { 
@@ -24,6 +24,15 @@ export async function GET(
             optimized_sv: true,
             translated_da: true,
             translated_no: true,
+            status: true,
+            error_message: true
+          }
+        },
+        ui_items: {
+          select: {
+            id: true,
+            name: true,
+            values: true,
             status: true,
             error_message: true
           }

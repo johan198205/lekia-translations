@@ -31,8 +31,10 @@ interface Product {
 }
 
 interface UIString {
+  id: string;
   name: string;
   values: Record<string, string>;
+  status?: string;
 }
 
 interface Upload {
@@ -55,7 +57,9 @@ interface Batch {
   status: string;
   created_at: string;
   upload_id: string;
+  job_type: 'product_texts' | 'ui_strings';
   products: Product[];
+  ui_items?: any[];
 }
 
 interface PromptSettings {
@@ -92,6 +96,7 @@ export default function Home() {
   const [selectedBatch, setSelectedBatch] = useState<Batch | null>(null)
   const [availableBatches, setAvailableBatches] = useState<Batch[]>([])
   const [isRegenerating, setIsRegenerating] = useState(false)
+  const [isUploading, setIsUploading] = useState(false)
 
   // Filter uploads based on selected jobType
   const filteredUploads = uploads.filter(upload => upload.job_type === jobType)
@@ -198,14 +203,14 @@ export default function Home() {
 
   // Update progress based on selected products during optimization and translation
   useEffect(() => {
-    if (phase === 'optimizing' || phase === 'translating') {
+    if ((phase === 'optimizing' || phase === 'translating') && batchId && jobType) {
       const interval = setInterval(() => {
         fetchUpdatedProducts()
       }, 1000) // Check every second
       
       return () => clearInterval(interval)
     }
-  }, [phase, batchId])
+  }, [phase, batchId, jobType])
 
   // Update timer display during optimization
   useEffect(() => {
@@ -284,22 +289,32 @@ export default function Home() {
     const uploadBatches = batches.filter(batch => batch.upload_id === upload.id)
     setAvailableBatches(uploadBatches)
     
-    // If no batches exist for this upload, load products directly
+    // If no batches exist for this upload, load items directly
     if (uploadBatches.length === 0) {
       try {
-        const response = await fetch(`/api/uploads/${upload.id}/products`)
+        const endpoint = upload.job_type === 'product_texts' 
+          ? `/api/uploads/${upload.id}/products`
+          : `/api/uploads/${upload.id}/ui-items`
+        const response = await fetch(endpoint)
         if (response.ok) {
           const data = await response.json()
-          setParsedProducts(data.products)
-          setProductsCount(data.products.length)
-          setSelectedIds(new Set(data.products.map((_: any, index: number) => index)))
+          if (upload.job_type === 'product_texts') {
+            setParsedProducts(data.products)
+            setProductsCount(data.products.length)
+            setSelectedIds(new Set(data.products.map((_: any, index: number) => index)))
+            setUploadAlert(`✅ Upload vald: ${upload.filename} (${data.products.length} produkter)`)
+          } else {
+            setParsedUIStrings(data.uiItems)
+            setProductsCount(data.uiItems.length)
+            setSelectedIds(new Set(data.uiItems.map((_: any, index: number) => index)))
+            setUploadAlert(`✅ Upload vald: ${upload.filename} (${data.uiItems.length} UI-element)`)
+          }
           setPhase('uploaded')
-          setUploadAlert(`✅ Upload vald: ${upload.filename} (${data.products.length} produkter)`)
         } else {
-          setUploadAlert('❌ Fel vid hämtning av upload-produkter')
+          setUploadAlert('❌ Fel vid hämtning av upload-data')
         }
       } catch (err) {
-        setUploadAlert('❌ Fel vid hämtning av upload-produkter: Nätverksfel')
+        setUploadAlert('❌ Fel vid hämtning av upload-data: Nätverksfel')
       }
     } else {
       setUploadAlert(`✅ Upload vald: ${upload.filename}. Välj batch nedan.`)
@@ -317,22 +332,40 @@ export default function Home() {
       const response = await fetch(`/api/batches/${batch.id}`)
       if (response.ok) {
         const data = await response.json()
-        setParsedProducts(data.products)
-        setProductsCount(data.products.length)
-        setSelectedIds(new Set(data.products.map((_: any, index: number) => index)))
+        if (batch.job_type === 'product_texts') {
+          setParsedProducts(data.products)
+          setProductsCount(data.products.length)
+          setSelectedIds(new Set(data.products.map((_: any, index: number) => index)))
+          setUploadAlert(`✅ Batch vald: ${batch.filename} (${data.products.length} produkter)`)
+        } else {
+          // Handle UI items
+          const uiItems = data.ui_items.map((item: any) => ({
+            id: item.id,
+            name: item.name,
+            values: JSON.parse(item.values),
+            status: item.status
+          }))
+          setParsedUIStrings(uiItems)
+          setProductsCount(uiItems.length)
+          setSelectedIds(new Set(uiItems.map((_: any, index: number) => index)))
+          setUploadAlert(`✅ Batch vald: ${batch.filename} (${uiItems.length} UI-element)`)
+        }
         setBatchId(batch.id)
         setPhase('readyToExport') // Skip to ready state since batch already exists
-        setUploadAlert(`✅ Batch vald: ${batch.filename} (${data.products.length} produkter)`)
       } else {
-        setUploadAlert('❌ Fel vid hämtning av batch-produkter')
+        setUploadAlert('❌ Fel vid hämtning av batch-data')
       }
     } catch (err) {
-      setUploadAlert('❌ Fel vid hämtning av batch-produkter: Nätverksfel')
+      setUploadAlert('❌ Fel vid hämtning av batch-data: Nätverksfel')
     }
   }
 
   const handleUpload = async () => {
-    if (!file) return
+    if (!file || isUploading) return
+
+    setIsUploading(true)
+    setError('')
+    setUploadAlert('')
 
     const formData = new FormData()
     formData.append('file', file)
@@ -376,6 +409,8 @@ export default function Home() {
       }
     } catch (err) {
       setUploadAlert('❌ Fel vid uppladdning: Nätverksfel')
+    } finally {
+      setIsUploading(false)
     }
   }
 
@@ -383,23 +418,59 @@ export default function Home() {
     if (!uploadId || selectedIds.size === 0) return
 
     try {
-      // Get selected product IDs
-      const selectedProductIds = Array.from(selectedIds).map(index => parsedProducts[index]?.id).filter(Boolean)
+      let selectedItemIds: string[] = []
+      
+      if (jobType === 'product_texts') {
+        // Get selected product IDs
+        selectedItemIds = Array.from(selectedIds).map(index => parsedProducts[index]?.id).filter(Boolean)
+      } else {
+        // Get selected UI item IDs
+        selectedItemIds = Array.from(selectedIds).map(index => parsedUIStrings[index]?.id).filter(Boolean)
+      }
       
       const response = await fetch('/api/batches', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           upload_id: uploadId,
-          selected_product_ids: selectedProductIds
+          job_type: jobType,
+          selected_ids: selectedItemIds
         })
       })
 
       if (response.ok) {
         const data = await response.json()
         setBatchId(data.id)
-        setPhase('batched')
-        setBatchAlert(`✅ Batch skapad! ${selectedIds.size} produkter valda för optimering.`)
+        
+        // For UI elements, immediately set phase to readyToExport since no optimization is needed
+        if (jobType === 'ui_strings') {
+          setPhase('readyToExport')
+        } else {
+          setPhase('batched')
+        }
+        
+        setBatchAlert(`✅ Batch skapad! ${selectedIds.size} ${jobType === 'product_texts' ? 'produkter' : 'UI-element'} valda.`)
+        
+        // Load the batch data to show the items immediately
+        try {
+          const batchResponse = await fetch(`/api/batches/${data.id}`)
+          if (batchResponse.ok) {
+            const batchData = await batchResponse.json()
+            if (jobType === 'product_texts' && batchData.products) {
+              setParsedProducts(batchData.products)
+            } else if (jobType === 'ui_strings' && batchData.ui_items) {
+              const uiItems = batchData.ui_items.map((item: any) => ({
+                id: item.id,
+                name: item.name,
+                values: JSON.parse(item.values),
+                status: item.status
+              }))
+              setParsedUIStrings(uiItems)
+            }
+          }
+        } catch (err) {
+          console.error('Error loading batch data:', err)
+        }
       } else {
         const errorData = await response.json()
         setBatchAlert(`❌ Fel vid skapande av batch: ${errorData.error || 'Okänt fel'}`)
@@ -413,20 +484,30 @@ export default function Home() {
     if (!selectedUpload) return
 
     try {
-      // Load remaining products for manual selection
-      const response = await fetch(`/api/uploads/${selectedUpload.id}/products`)
+      // Load remaining items for manual selection
+      const endpoint = selectedUpload.job_type === 'product_texts' 
+        ? `/api/uploads/${selectedUpload.id}/products`
+        : `/api/uploads/${selectedUpload.id}/ui-items`
+      const response = await fetch(endpoint)
       if (response.ok) {
         const data = await response.json()
-        setParsedProducts(data.products)
-        setProductsCount(data.products.length)
-        setSelectedIds(new Set(data.products.map((_: any, index: number) => index)))
+        if (selectedUpload.job_type === 'product_texts') {
+          setParsedProducts(data.products)
+          setProductsCount(data.products.length)
+          setSelectedIds(new Set(data.products.map((_: any, index: number) => index)))
+          setUploadAlert(`✅ ${data.products.length} återstående produkter laddade. Välj produkter nedan och klicka "Skapa batch".`)
+        } else {
+          setParsedUIStrings(data.uiItems)
+          setProductsCount(data.uiItems.length)
+          setSelectedIds(new Set(data.uiItems.map((_: any, index: number) => index)))
+          setUploadAlert(`✅ ${data.uiItems.length} återstående UI-element laddade. Välj UI-element nedan och klicka "Skapa batch".`)
+        }
         setPhase('uploaded')
-        setUploadAlert(`✅ ${data.products.length} återstående produkter laddade. Välj produkter nedan och klicka "Skapa batch".`)
       } else {
-        setUploadAlert('❌ Fel vid hämtning av återstående produkter')
+        setUploadAlert('❌ Fel vid hämtning av återstående data')
       }
     } catch (err) {
-      setUploadAlert('❌ Fel vid hämtning av återstående produkter: Nätverksfel')
+      setUploadAlert('❌ Fel vid hämtning av återstående data: Nätverksfel')
     }
   }
 
@@ -435,10 +516,10 @@ export default function Home() {
 
     // 1. Show progress UI immediately
     setPhase('optimizing')
-    setOptimizeAlert('✅ Optimering startad! Följer framsteg...')
+    setOptimizeAlert(jobType === 'product_texts' ? '✅ Optimering startad! Följer framsteg...' : '✅ Markerar UI-element som klara...')
     setOptimizationStartTime(Date.now())
     
-    // 2. Start SSE connection before POST
+    // 2. Start SSE connection before POST (for both products and UI elements)
     if (eventSourceRef.current) {
       eventSourceRef.current.close()
     }
@@ -455,8 +536,18 @@ export default function Home() {
           eventSource.close()
           eventSourceRef.current = null
           setPhase('readyToExport')
-          setOptimizeAlert('✅ Optimering klar!')
-          setOptimizationStartTime(null)
+          if (jobType === 'product_texts') {
+            setOptimizeAlert('✅ Optimering klar!')
+            setOptimizationStartTime(null)
+            // Fetch updated data to show the optimization results
+            fetchUpdatedProducts()
+          } else {
+            setTranslateAlert('✅ Översättning klar!')
+            setTranslationStartTime(null)
+            setTranslationLanguage(null)
+            // Fetch updated data to show the translation results
+            fetchUpdatedProducts()
+          }
         }
       } catch (err) {
         console.error('Fel vid parsing av SSE-data:', err)
@@ -466,7 +557,11 @@ export default function Home() {
     eventSource.onerror = () => {
       eventSource.close()
       eventSourceRef.current = null
-      setOptimizeAlert('❌ Fel vid SSE-anslutning')
+      if (jobType === 'product_texts') {
+        setOptimizeAlert('❌ Fel vid SSE-anslutning')
+      } else {
+        setTranslateAlert('❌ Fel vid SSE-anslutning')
+      }
     }
 
     // 3. Fire-and-forget the POST request
@@ -496,13 +591,21 @@ export default function Home() {
 
       if (!response.ok) {
         const errorData = await response.json()
-        setOptimizeAlert(`❌ Fel vid start av optimering: ${errorData.error || 'Okänt fel'}`)
+        if (jobType === 'product_texts') {
+          setOptimizeAlert(`❌ Fel vid start av optimering: ${errorData.error || 'Okänt fel'}`)
+        } else {
+          setTranslateAlert(`❌ Fel vid start av översättning: ${errorData.error || 'Okänt fel'}`)
+        }
         eventSource.close()
         eventSourceRef.current = null
         setPhase('batched') // Reset phase on error
       }
     } catch (err) {
-      setOptimizeAlert('❌ Fel vid start av optimering: Nätverksfel')
+      if (jobType === 'product_texts') {
+        setOptimizeAlert('❌ Fel vid start av optimering: Nätverksfel')
+      } else {
+        setTranslateAlert('❌ Fel vid start av översättning: Nätverksfel')
+      }
       eventSource.close()
       eventSourceRef.current = null
       setPhase('batched') // Reset phase on error
@@ -578,7 +681,7 @@ export default function Home() {
           setTranslationStartTime(null)
           setTranslationLanguage(null)
           
-          // Fetch updated products to show the translation results
+          // Fetch updated data to show the translation results
           fetchUpdatedProducts()
         }
       } catch (err) {
@@ -594,14 +697,16 @@ export default function Home() {
 
     // 3. Fire-and-forget the POST request
     try {
-      const selectedProductIds = Array.from(selectedIds).map(index => parsedProducts[index]?.id).filter(Boolean)
+      const selectedItemIds = jobType === 'product_texts' 
+        ? Array.from(selectedIds).map(index => parsedProducts[index]?.id).filter(Boolean)
+        : Array.from(selectedIds).map(index => parsedUIStrings[index]?.id).filter(Boolean)
       
       const response = await fetch(`/api/batches/${batchId}/translate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           languages: [language],
-          selectedProductIds,
+          selectedProductIds: selectedItemIds,
           clientPromptSettings: {
             optimize: {
               system: promptSettings.optimize.system,
@@ -628,6 +733,12 @@ export default function Home() {
         setPhase('readyToExport') // Reset phase on error
         setTranslationStartTime(null)
         setTranslationLanguage(null)
+      } else {
+        // For UI elements, we get a jobId response
+        const responseData = await response.json()
+        if (jobType === 'ui_strings' && responseData.jobId) {
+          console.log(`[UI TRANSLATE] Started with jobId: ${responseData.jobId}, total: ${responseData.total}`)
+        }
       }
     } catch (err) {
       setTranslateAlert('❌ Fel vid start av översättning: Nätverksfel')
@@ -860,6 +971,8 @@ export default function Home() {
               setOptimizeAlert('✅ Regenerering klar!')
               setOptimizationStartTime(null)
               setIsRegenerating(false)
+              // Fetch updated data to show the regeneration results
+              fetchUpdatedProducts()
             }
           } catch (err) {
             console.error('Fel vid parsing av SSE-data:', err)
@@ -883,28 +996,43 @@ export default function Home() {
     }
   }
 
-  // Function to fetch updated products from backend
+  // Function to fetch updated products or UI items from backend
   const fetchUpdatedProducts = async () => {
-    if (!batchId) return
+    if (!batchId || !jobType) return
     
     try {
       const response = await fetch(`/api/batches/${batchId}`)
       if (response.ok) {
         const batchData = await response.json()
-        if (batchData.products) {
+        if (jobType === 'product_texts' && batchData.products && Array.isArray(batchData.products)) {
           setParsedProducts(prev => 
-            prev.map((product, index) => ({
-              ...product,
-              status: batchData.products[index]?.status || product.status,
-              optimized_sv: batchData.products[index]?.optimized_sv || product.optimized_sv,
-              translated_no: batchData.products[index]?.translated_no || product.translated_no,
-              translated_da: batchData.products[index]?.translated_da || product.translated_da
-            }))
+            prev.map((product) => {
+              // Find the updated product by ID instead of index
+              const updatedProduct = batchData.products.find((p: any) => p.id === product.id)
+              if (updatedProduct) {
+                return {
+                  ...product,
+                  status: updatedProduct.status || product.status,
+                  optimized_sv: updatedProduct.optimized_sv || product.optimized_sv,
+                  translated_no: updatedProduct.translated_no || product.translated_no,
+                  translated_da: updatedProduct.translated_da || product.translated_da
+                }
+              }
+              return product
+            })
           )
+        } else if (jobType === 'ui_strings' && batchData.ui_items && Array.isArray(batchData.ui_items)) {
+          const updatedUIItems = batchData.ui_items.map((item: any) => ({
+            id: item.id,
+            name: item.name,
+            values: JSON.parse(item.values),
+            status: item.status
+          }))
+          setParsedUIStrings(updatedUIItems)
         }
       }
     } catch (err) {
-      console.error('Fel vid hämtning av uppdaterade produkter:', err)
+      console.error('Fel vid hämtning av uppdaterade data:', err)
     }
   }
 
@@ -1079,15 +1207,21 @@ export default function Home() {
               )}
               <button
                 onClick={handleUpload}
-                disabled={!file || selectedBatch !== null}
+                disabled={!file || selectedBatch !== null || isUploading}
                 className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
               >
-                Ladda upp ny fil
+                {isUploading ? 'Laddar upp...' : 'Ladda upp ny fil'}
               </button>
               {selectedBatch && (
                 <p className="text-sm text-gray-500">
                   Filuppladdning inaktiverad när batch är vald
                 </p>
+              )}
+              {isUploading && (
+                <div className="flex items-center gap-2 text-sm text-blue-600">
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+                  <span>Laddar upp fil...</span>
+                </div>
               )}
             </div>
 
@@ -1245,47 +1379,71 @@ export default function Home() {
         </div>
 
 
-        {/* D) Optimera & Översätt-sektion - endast för produkttexter */}
-        {jobType === 'product_texts' && (
+        {/* D) Optimera & Översätt-sektion */}
+        {((jobType === 'product_texts' && (phase === 'batched' || phase === 'optimizing' || phase === 'translating' || phase === 'readyToExport')) || (jobType === 'ui_strings' && (phase === 'readyToExport' || phase === 'translating'))) && (
           <div className="bg-white rounded-lg shadow-md p-6 mb-6">
-            <h2 className="text-xl font-semibold mb-4">D) Optimera & Översätt</h2>
+            <h2 className="text-xl font-semibold mb-4">
+              {jobType === 'product_texts' ? 'D) Optimera & Översätt' : 'D) Översätt'}
+            </h2>
           <div className="space-y-4">
             <div className="flex gap-4">
-              <button
-                onClick={handleOptimize}
-                disabled={!batchId || phase === 'optimizing'}
-                className="bg-purple-600 text-white px-4 py-2 rounded-md hover:bg-purple-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
-              >
-                Optimera (SV)
-              </button>
-              
-              {/* Översättningsknappar - visas endast om alla valda rader har optimerad svensk text */}
-              {(() => {
-                const selectedProducts = Array.from(selectedIds).map(index => parsedProducts[index]).filter(Boolean)
-                const allHaveOptimizedSv = selectedProducts.length > 0 && selectedProducts.every(p => p.optimized_sv && p.optimized_sv.trim())
-                const hasSelectedProducts = selectedIds.size > 0
-                
-                return (
-                  <>
-                    <button
-                      onClick={() => handleTranslateSpecific('no')}
-                      disabled={!batchId || !allHaveOptimizedSv || !hasSelectedProducts || phase === 'translating'}
-                      className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
-                      title={!allHaveOptimizedSv ? "Kräver optimerad svensk text" : ""}
-                    >
-                      Översätt till norska (NO)
-                    </button>
-                    <button
-                      onClick={() => handleTranslateSpecific('da')}
-                      disabled={!batchId || !allHaveOptimizedSv || !hasSelectedProducts || phase === 'translating'}
-                      className="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
-                      title={!allHaveOptimizedSv ? "Kräver optimerad svensk text" : ""}
-                    >
-                      Översätt till danska (DK)
-                    </button>
-                  </>
-                )
-              })()}
+              {jobType === 'product_texts' ? (
+                <>
+                  <button
+                    onClick={handleOptimize}
+                    disabled={!batchId || phase === 'optimizing'}
+                    className="bg-purple-600 text-white px-4 py-2 rounded-md hover:bg-purple-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
+                  >
+                    Optimera (SV)
+                  </button>
+                  
+                  {/* Översättningsknappar för produkttexter */}
+                  {(() => {
+                    const selectedProducts = Array.from(selectedIds).map(index => parsedProducts[index]).filter(Boolean)
+                    const allHaveOptimizedSv = selectedProducts.length > 0 && selectedProducts.every(p => p.optimized_sv && p.optimized_sv.trim())
+                    const hasSelectedProducts = selectedIds.size > 0
+                    
+                    return (
+                      <>
+                        <button
+                          onClick={() => handleTranslateSpecific('no')}
+                          disabled={!batchId || !allHaveOptimizedSv || !hasSelectedProducts || phase === 'translating'}
+                          className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
+                          title={!allHaveOptimizedSv ? "Kräver optimerad svensk text" : ""}
+                        >
+                          Översätt till norska (NO)
+                        </button>
+                        <button
+                          onClick={() => handleTranslateSpecific('da')}
+                          disabled={!batchId || !allHaveOptimizedSv || !hasSelectedProducts || phase === 'translating'}
+                          className="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
+                          title={!allHaveOptimizedSv ? "Kräver optimerad svensk text" : ""}
+                        >
+                          Översätt till danska (DK)
+                        </button>
+                      </>
+                    )
+                  })()}
+                </>
+              ) : (
+                <>
+                  {/* Översättningsknappar för UI-element */}
+                  <button
+                    onClick={() => handleTranslateSpecific('no')}
+                    disabled={!batchId || selectedIds.size === 0 || phase === 'translating'}
+                    className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
+                  >
+                    Översätt till norska (no-NO)
+                  </button>
+                  <button
+                    onClick={() => handleTranslateSpecific('da')}
+                    disabled={!batchId || selectedIds.size === 0 || phase === 'translating'}
+                    className="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
+                  >
+                    Översätt till danska (da-DK)
+                  </button>
+                </>
+              )}
             </div>
             
             {/* Debug info - only in development */}
@@ -1294,7 +1452,7 @@ export default function Home() {
                 <p><strong>Debug info:</strong></p>
                 <p>Phase: {phase}</p>
                 <p>Batch ID: {batchId || 'Ingen'}</p>
-                <p>Selected IDs: {selectedIds.size} av {parsedProducts.length}</p>
+                <p>Selected IDs: {selectedIds.size} av {jobType === 'product_texts' ? parsedProducts.length : parsedUIStrings.length}</p>
                 <p>Selected indices: {Array.from(selectedIds).slice(0, 10).join(', ')}{selectedIds.size > 10 ? '...' : ''}</p>
               </div>
             )}
@@ -1309,7 +1467,7 @@ export default function Home() {
                 </div>
                 <div className="flex justify-between items-center text-sm text-gray-600">
                   <span>
-                    {progress.percent}% klart ({progress.done || 0}/{progress.total || 0} produkter)
+                    {progress.percent}% klart ({progress.done || 0}/{progress.total || 0} {jobType === 'product_texts' ? 'produkter' : 'UI-element'})
                   </span>
                   {optimizationStartTime && (
                     <span className="font-mono">
@@ -1320,7 +1478,7 @@ export default function Home() {
                 {progress.counts && (
                   <div className="grid grid-cols-3 gap-4 text-sm">
                     <div>Väntar: {progress.counts.pending}</div>
-                    <div>Optimerar: {progress.counts.optimizing}</div>
+                    <div>{jobType === 'product_texts' ? 'Optimerar' : 'Bearbetar'}: {progress.counts.optimizing}</div>
                     <div>Klar: {progress.counts.optimized}</div>
                   </div>
                 )}
@@ -1337,7 +1495,7 @@ export default function Home() {
                 </div>
                 <div className="flex justify-between items-center text-sm text-gray-600">
                   <span>
-                    {progress.percent}% klart ({progress.done || 0}/{progress.total || 0} produkter)
+                    {progress.percent}% klart ({progress.done || 0}/{progress.total || 0} {jobType === 'product_texts' ? 'produkter' : 'UI-element'})
                   </span>
                   {translationStartTime && (
                     <span className="font-mono">
@@ -1348,7 +1506,7 @@ export default function Home() {
                 {progress.counts && (
                   <div className="grid grid-cols-3 gap-4 text-sm">
                     <div>Väntar: {progress.counts.pending}</div>
-                    <div>Översätter: {progress.counts.translating}</div>
+                    <div>{jobType === 'product_texts' ? 'Översätter' : 'Bearbetar'}: {jobType === 'product_texts' ? progress.counts.translating : progress.counts.optimizing}</div>
                     <div>Klar: {progress.counts.completed}</div>
                   </div>
                 )}
@@ -1367,10 +1525,15 @@ export default function Home() {
               </p>
             )}
             
-            {/* Visa optimerade produkter */}
+            {/* Visa optimerade produkter eller UI-element */}
             {phase === 'readyToExport' && (
               <div className="mt-4 p-4 bg-gray-50 rounded-lg">
-                <h3 className="font-medium mb-4">Optimerade produkter ({selectedIds.size} av {parsedProducts.length})</h3>
+                <h3 className="font-medium mb-4">
+                  {jobType === 'product_texts' 
+                    ? `Optimerade produkter (${selectedIds.size} av ${parsedProducts.length})`
+                    : `UI-element (${selectedIds.size} av ${parsedUIStrings.length})`
+                  }
+                </h3>
                 
                 {/* Urvalsknappar */}
                 <div className="flex flex-wrap gap-2 mb-4">
@@ -1388,7 +1551,7 @@ export default function Home() {
                   </button>
                 </div>
 
-                {/* Produktlista */}
+                {/* Produktlista eller UI-element lista */}
                 <div className="max-h-96 overflow-y-auto border border-gray-200 rounded-md">
                   <table className="w-full text-xs">
                     <thead className="bg-gray-50 sticky top-0">
@@ -1396,111 +1559,153 @@ export default function Home() {
                         <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-8">
                           <input
                             type="checkbox"
-                            checked={selectedIds.size === parsedProducts.length && parsedProducts.length > 0}
-                            onChange={selectedIds.size === parsedProducts.length ? handleDeselectAll : handleSelectAll}
+                            checked={selectedIds.size === (jobType === 'product_texts' ? parsedProducts.length : parsedUIStrings.length) && (jobType === 'product_texts' ? parsedProducts.length : parsedUIStrings.length) > 0}
+                            onChange={selectedIds.size === (jobType === 'product_texts' ? parsedProducts.length : parsedUIStrings.length) ? handleDeselectAll : handleSelectAll}
                             className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                           />
                         </th>
-                        <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">PRODUKTNAMN</th>
-                        <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">BESKRIVNING (SV)</th>
-                        <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">OPTIMERAD TEXT (SV)</th>
-                        <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">OPTIMERAD TEXT (NO)</th>
-                        <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">OPTIMERAD TEXT (DK)</th>
-                        <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-20">STATUS</th>
+                        {jobType === 'product_texts' ? (
+                          <>
+                            <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">PRODUKTNAMN</th>
+                            <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">BESKRIVNING (SV)</th>
+                            <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">OPTIMERAD TEXT (SV)</th>
+                            <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">OPTIMERAD TEXT (NO)</th>
+                            <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">OPTIMERAD TEXT (DK)</th>
+                            <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-20">STATUS</th>
+                          </>
+                        ) : (
+                          <>
+                            <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">NAMN</th>
+                            {parsedUIStrings.length > 0 && Object.keys(parsedUIStrings[0].values).map(locale => (
+                              <th key={locale} className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{locale}</th>
+                            ))}
+                            <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-20">STATUS</th>
+                          </>
+                        )}
                       </tr>
                     </thead>
                     <tbody className="bg-white divide-y divide-gray-200">
-                      {parsedProducts.slice(0, visibleRows).map((product, index) => (
-                        <tr key={index} className="hover:bg-gray-50">
-                          <td className="px-2 py-1">
-                            <input
-                              type="checkbox"
-                              checked={selectedIds.has(index)}
-                              onChange={() => handleProductToggle(index)}
-                              className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                            />
-                          </td>
-                          <td className="px-2 py-1 text-xs font-bold text-gray-900">
-                            <div className="truncate" title={product.name_sv}>
-                              {product.name_sv}
-                            </div>
-                          </td>
-                          <td className="px-2 py-1 text-xs text-gray-500">
-                            <div 
-                              className="cursor-pointer hover:bg-gray-100 truncate"
-                              onClick={() => handleCellClick(product, 'description_sv')}
-                              title="Klicka för att redigera"
-                            >
-                              {product.description_sv.length > 40 
-                                ? `${product.description_sv.substring(0, 40)}...` 
-                                : product.description_sv}
-                            </div>
-                          </td>
-                          <td className="px-2 py-1 text-xs text-gray-500">
-                            {product.optimized_sv ? (
+                      {jobType === 'product_texts' ? (
+                        parsedProducts.slice(0, visibleRows).map((product, index) => (
+                          <tr key={index} className="hover:bg-gray-50">
+                            <td className="px-2 py-1">
+                              <input
+                                type="checkbox"
+                                checked={selectedIds.has(index)}
+                                onChange={() => handleProductToggle(index)}
+                                className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                              />
+                            </td>
+                            <td className="px-2 py-1 text-xs font-bold text-gray-900">
+                              <div className="truncate" title={product.name_sv}>
+                                {product.name_sv}
+                              </div>
+                            </td>
+                            <td className="px-2 py-1 text-xs text-gray-500">
                               <div 
                                 className="cursor-pointer hover:bg-gray-100 truncate"
-                                onClick={() => handleCellClick(product, 'optimized_sv')}
+                                onClick={() => handleCellClick(product, 'description_sv')}
                                 title="Klicka för att redigera"
                               >
-                                <div className="truncate" dangerouslySetInnerHTML={{ 
-                                  __html: formatOptimizedText(product.optimized_sv.substring(0, 40) + (product.optimized_sv.length > 40 ? '...' : ''))
-                                }} />
+                                {product.description_sv.length > 40 
+                                  ? `${product.description_sv.substring(0, 40)}...` 
+                                  : product.description_sv}
                               </div>
-                            ) : (
-                              <span className="text-gray-400">-</span>
-                            )}
-                          </td>
-                          <td className="px-2 py-1 text-xs text-gray-500">
-                            {product.translated_no ? (
-                              <div 
-                                className="cursor-pointer hover:bg-gray-100 truncate"
-                                onClick={() => handleCellClick(product, 'translated_no')}
-                                title="Klicka för att redigera"
-                              >
-                                {product.translated_no.length > 40 
-                                  ? `${product.translated_no.substring(0, 40)}...` 
-                                  : product.translated_no}
+                            </td>
+                            <td className="px-2 py-1 text-xs text-gray-500">
+                              {product.optimized_sv ? (
+                                <div 
+                                  className="cursor-pointer hover:bg-gray-100 truncate"
+                                  onClick={() => handleCellClick(product, 'optimized_sv')}
+                                  title="Klicka för att redigera"
+                                >
+                                  <div className="truncate" dangerouslySetInnerHTML={{ 
+                                    __html: formatOptimizedText(product.optimized_sv.substring(0, 40) + (product.optimized_sv.length > 40 ? '...' : ''))
+                                  }} />
+                                </div>
+                              ) : (
+                                <span className="text-gray-400">-</span>
+                              )}
+                            </td>
+                            <td className="px-2 py-1 text-xs text-gray-500">
+                              {product.translated_no ? (
+                                <div 
+                                  className="cursor-pointer hover:bg-gray-100 truncate"
+                                  onClick={() => handleCellClick(product, 'translated_no')}
+                                  title="Klicka för att redigera"
+                                >
+                                  {product.translated_no.length > 40 
+                                    ? `${product.translated_no.substring(0, 40)}...` 
+                                    : product.translated_no}
+                                </div>
+                              ) : (
+                                <span className="text-gray-400">-</span>
+                              )}
+                            </td>
+                            <td className="px-2 py-1 text-xs text-gray-500">
+                              {product.translated_da ? (
+                                <div 
+                                  className="cursor-pointer hover:bg-gray-100 truncate"
+                                  onClick={() => handleCellClick(product, 'translated_da' as any)}
+                                  title="Klicka för att redigera"
+                                >
+                                  {product.translated_da.length > 40 
+                                    ? `${product.translated_da.substring(0, 40)}...` 
+                                    : product.translated_da}
+                                </div>
+                              ) : (
+                                <span className="text-gray-400">-</span>
+                              )}
+                            </td>
+                            <td className="px-2 py-1 text-xs text-gray-700">
+                              {getProductStatus(product)}
+                            </td>
+                          </tr>
+                        ))
+                      ) : (
+                        parsedUIStrings.slice(0, visibleRows).map((uiItem, index) => (
+                          <tr key={index} className="hover:bg-gray-50">
+                            <td className="px-2 py-1">
+                              <input
+                                type="checkbox"
+                                checked={selectedIds.has(index)}
+                                onChange={() => handleProductToggle(index)}
+                                className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                              />
+                            </td>
+                            <td className="px-2 py-1 text-xs font-bold text-gray-900">
+                              <div className="truncate" title={uiItem.name}>
+                                {uiItem.name}
                               </div>
-                            ) : (
-                              <span className="text-gray-400">-</span>
-                            )}
-                          </td>
-                          <td className="px-2 py-1 text-xs text-gray-500">
-                            {product.translated_da ? (
-                              <div 
-                                className="cursor-pointer hover:bg-gray-100 truncate"
-                                onClick={() => handleCellClick(product, 'translated_da' as any)}
-                                title="Klicka för att redigera"
-                              >
-                                {product.translated_da.length > 40 
-                                  ? `${product.translated_da.substring(0, 40)}...` 
-                                  : product.translated_da}
-                              </div>
-                            ) : (
-                              <span className="text-gray-400">-</span>
-                            )}
-                          </td>
-                          <td className="px-2 py-1 text-xs text-gray-700">
-                            {getProductStatus(product)}
-                          </td>
-                        </tr>
-                      ))}
+                            </td>
+                            {Object.entries(uiItem.values).map(([locale, value]) => (
+                              <td key={locale} className="px-2 py-1 text-xs text-gray-500">
+                                <div className="truncate" title={value as string}>
+                                  {value || '(tom)'}
+                                </div>
+                              </td>
+                            ))}
+                            <td className="px-2 py-1 text-xs text-gray-700">
+                              {uiItem.status || 'pending'}
+                            </td>
+                          </tr>
+                        ))
+                      )}
                     </tbody>
                   </table>
                 </div>
                 
                 {/* Visa fler-knapp */}
-                {visibleRows < parsedProducts.length && (
+                {visibleRows < (jobType === 'product_texts' ? parsedProducts.length : parsedUIStrings.length) && (
                   <div className="text-center mt-4">
                     <button
                       onClick={handleShowMore}
                       className="bg-gray-600 text-white px-4 py-2 rounded-md hover:bg-gray-700 text-sm"
                     >
-                      Visa fler ({Math.min(200, parsedProducts.length - visibleRows)} till)
+                      Visa fler ({Math.min(200, (jobType === 'product_texts' ? parsedProducts.length : parsedUIStrings.length) - visibleRows)} till)
                     </button>
                     <p className="text-xs text-gray-500 mt-1">
-                      Visar {Math.min(visibleRows, parsedProducts.length)} av {parsedProducts.length} produkter
+                      Visar {Math.min(visibleRows, jobType === 'product_texts' ? parsedProducts.length : parsedUIStrings.length)} av {jobType === 'product_texts' ? parsedProducts.length : parsedUIStrings.length} {jobType === 'product_texts' ? 'produkter' : 'UI-element'}
                     </p>
                   </div>
                 )}

@@ -30,6 +30,11 @@ export async function GET(
                 select: {
                   status: true
                 }
+              },
+              ui_items: {
+                select: {
+                  status: true
+                }
               }
             }
           })
@@ -40,26 +45,49 @@ export async function GET(
             return
           }
 
-          // Calculate initial progress - only for selected products
-          const productsToCheck = selectedIndices.length > 0 
-            ? selectedIndices.map(index => batch.products[index]).filter(Boolean)
-            : batch.products;
-          
-          const total = productsToCheck.length
-          const pending = productsToCheck.filter(p => p.status === 'pending').length
-          const optimizing = productsToCheck.filter(p => p.status === 'optimizing').length
-          const optimized = productsToCheck.filter(p => p.status === 'optimized').length
-          const translating = productsToCheck.filter(p => p.status === 'translating').length
-          const completed = productsToCheck.filter(p => p.status === 'completed').length
-          const error = productsToCheck.filter(p => p.status === 'error').length
+          // Calculate initial progress - for products or UI items
+          let itemsToCheck: any[] = []
+          let total = 0
+          let pending = 0
+          let optimizing = 0
+          let optimized = 0
+          let translating = 0
+          let completed = 0
+          let error = 0
 
-          const processedProducts = total - pending
-          const percent = total > 0 ? Math.round((processedProducts / total) * 100) : 0
+          if (batch.job_type === 'product_texts') {
+            itemsToCheck = selectedIndices.length > 0 
+              ? selectedIndices.map(index => batch.products[index]).filter(Boolean)
+              : batch.products;
+            
+            total = itemsToCheck.length
+            pending = itemsToCheck.filter(p => p.status === 'pending').length
+            optimizing = itemsToCheck.filter(p => p.status === 'optimizing').length
+            optimized = itemsToCheck.filter(p => p.status === 'optimized').length
+            translating = itemsToCheck.filter(p => p.status === 'translating').length
+            completed = itemsToCheck.filter(p => p.status === 'completed').length
+            error = itemsToCheck.filter(p => p.status === 'error').length
+          } else {
+            itemsToCheck = selectedIndices.length > 0 
+              ? selectedIndices.map(index => batch.ui_items[index]).filter(Boolean)
+              : batch.ui_items;
+            
+            total = itemsToCheck.length
+            pending = itemsToCheck.filter(p => p.status === 'pending').length
+            optimizing = itemsToCheck.filter(p => p.status === 'processing').length // UI items use 'processing' instead of 'optimizing'
+            optimized = 0 // UI items don't have optimized status
+            translating = 0 // UI items don't have translating status
+            completed = itemsToCheck.filter(p => p.status === 'completed').length
+            error = itemsToCheck.filter(p => p.status === 'error').length
+          }
+
+          const processedItems = total - pending
+          const percent = total > 0 ? Math.round((processedItems / total) * 100) : 0
 
           const initialProgress = {
             type: 'progress',
             data: {
-              done: processedProducts,
+              done: processedItems,
               total,
               percent,
               counts: {
@@ -91,6 +119,11 @@ export async function GET(
                     translated_da: true,
                     translated_no: true
                   }
+                },
+                ui_items: {
+                  select: {
+                    status: true
+                  }
                 }
               }
             })
@@ -102,40 +135,66 @@ export async function GET(
               return
             }
 
-            // Calculate progress - only for selected products
-            const productsToCheck = selectedIndices.length > 0 
-              ? selectedIndices.map(index => batch.products[index]).filter(Boolean)
-              : batch.products;
-            
-            const total = productsToCheck.length
-            const pending = productsToCheck.filter(p => p.status === 'pending').length
-            const optimizing = productsToCheck.filter(p => p.status === 'optimizing').length
-            const optimized = productsToCheck.filter(p => p.status === 'optimized').length
-            const translating = productsToCheck.filter(p => p.status === 'translating').length
-            const completed = productsToCheck.filter(p => p.status === 'completed').length
-            const error = productsToCheck.filter(p => p.status === 'error').length
+            // Calculate progress - for products or UI items
+            let itemsToCheck: any[] = []
+            let total = 0
+            let pending = 0
+            let optimizing = 0
+            let optimized = 0
+            let translating = 0
+            let completed = 0
+            let error = 0
+            let processedItems = 0
+            let percent = 0
 
-            // Calculate progress based on current phase
-            let processedProducts: number
-            let percent: number
-            
-            if (optimizing > 0 || optimized > 0) {
-              // Optimization phase: count optimized + completed as processed
-              processedProducts = optimized + completed
-              percent = total > 0 ? Math.round((processedProducts / total) * 100) : 0
-            } else if (translating > 0) {
-              // Translation phase: count actual translations completed
-              // Count products that have at least one translation (DA or NO)
-              const productsWithTranslations = productsToCheck.filter(p => 
-                (p.translated_da && p.translated_da.trim()) || 
-                (p.translated_no && p.translated_no.trim())
-              ).length
-              processedProducts = productsWithTranslations
-              percent = total > 0 ? Math.round((productsWithTranslations / total) * 100) : 0
+            if (batch.job_type === 'product_texts') {
+              itemsToCheck = selectedIndices.length > 0 
+                ? selectedIndices.map(index => batch.products[index]).filter(Boolean)
+                : batch.products;
+              
+              total = itemsToCheck.length
+              pending = itemsToCheck.filter(p => p.status === 'pending').length
+              optimizing = itemsToCheck.filter(p => p.status === 'optimizing').length
+              optimized = itemsToCheck.filter(p => p.status === 'optimized').length
+              translating = itemsToCheck.filter(p => p.status === 'translating').length
+              completed = itemsToCheck.filter(p => p.status === 'completed').length
+              error = itemsToCheck.filter(p => p.status === 'error').length
+
+              // Calculate progress based on current phase
+              if (optimizing > 0 || optimized > 0) {
+                // Optimization phase: count optimized + completed as processed
+                processedItems = optimized + completed
+                percent = total > 0 ? Math.round((processedItems / total) * 100) : 0
+              } else if (translating > 0) {
+                // Translation phase: count actual translations completed
+                const productsWithTranslations = itemsToCheck.filter(p => 
+                  (p.translated_da && p.translated_da.trim()) || 
+                  (p.translated_no && p.translated_no.trim())
+                ).length
+                processedItems = productsWithTranslations
+                percent = total > 0 ? Math.round((productsWithTranslations / total) * 100) : 0
+              } else {
+                // Default: count non-pending as processed
+                processedItems = total - pending
+                percent = total > 0 ? Math.round((processedItems / total) * 100) : 0
+              }
             } else {
-              // Default: count non-pending as processed
-              processedProducts = total - pending
-              percent = total > 0 ? Math.round((processedProducts / total) * 100) : 0
+              // UI items
+              itemsToCheck = selectedIndices.length > 0 
+                ? selectedIndices.map(index => batch.ui_items[index]).filter(Boolean)
+                : batch.ui_items;
+              
+              total = itemsToCheck.length
+              pending = itemsToCheck.filter(p => p.status === 'pending').length
+              optimizing = itemsToCheck.filter(p => p.status === 'processing').length // UI items use 'processing'
+              optimized = 0 // UI items don't have optimized status
+              translating = 0 // UI items don't have translating status
+              completed = itemsToCheck.filter(p => p.status === 'completed').length
+              error = itemsToCheck.filter(p => p.status === 'error').length
+
+              // For UI items: count completed as processed
+              processedItems = completed
+              percent = total > 0 ? Math.round((processedItems / total) * 100) : 0
             }
 
             console.log(`[EVENTS] Progress update for batch ${batchId}:`, {
@@ -146,14 +205,14 @@ export async function GET(
               translating,
               completed,
               error,
-              processedProducts,
+              processedItems,
               percent
             })
 
             const progressData = {
               type: 'progress',
               data: {
-                done: processedProducts,
+                done: processedItems,
                 total,
                 percent,
                 counts: {
@@ -170,12 +229,23 @@ export async function GET(
             controller.enqueue(encoder.encode(`data: ${JSON.stringify(progressData)}\n\n`))
 
             // Check if all done
-            if (pending === 0 && optimizing === 0 && translating === 0) {
-              console.log(`[EVENTS] Optimization complete for batch ${batchId}, closing stream`)
-              controller.enqueue(encoder.encode('data: {"type":"end"}\n\n'))
-              clearInterval(progressInterval)
-              if (heartbeatInterval) clearInterval(heartbeatInterval)
-              controller.close()
+            if (batch.job_type === 'product_texts') {
+              if (pending === 0 && optimizing === 0 && translating === 0) {
+                console.log(`[EVENTS] Optimization complete for batch ${batchId}, closing stream`)
+                controller.enqueue(encoder.encode('data: {"type":"end"}\n\n'))
+                clearInterval(progressInterval)
+                if (heartbeatInterval) clearInterval(heartbeatInterval)
+                controller.close()
+              }
+            } else {
+              // For UI items: check if all are completed or have errors
+              if (pending === 0 && optimizing === 0) {
+                console.log(`[EVENTS] Translation complete for batch ${batchId}, closing stream`)
+                controller.enqueue(encoder.encode('data: {"type":"end"}\n\n'))
+                clearInterval(progressInterval)
+                if (heartbeatInterval) clearInterval(heartbeatInterval)
+                controller.close()
+              }
             }
           } catch (error) {
             console.error('Progress monitoring error:', error)

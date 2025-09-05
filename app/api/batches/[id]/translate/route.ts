@@ -19,10 +19,13 @@ export async function POST(
       )
     }
 
-    // Verify batch exists and has optimized products
+    // Verify batch exists and has optimized products or UI items
     const batch = await prisma.productBatch.findUnique({
       where: { id: batchId },
-      include: { products: true }
+      include: { 
+        products: true,
+        ui_items: true
+      }
     })
 
     if (!batch) {
@@ -32,22 +35,144 @@ export async function POST(
       )
     }
 
-    // Filter products that have optimized_sv and are selected
-    const productsToTranslate = batch.products.filter(product => {
-      const hasOptimizedSv = product.optimized_sv && product.optimized_sv.trim()
-      const isSelected = !selectedProductIds || selectedProductIds.length === 0 || 
-                        selectedProductIds.includes(product.id)
-      return hasOptimizedSv && isSelected
-    })
+    let productsToTranslate: any[] = []
+    
+    if (batch.job_type === 'product_texts') {
+      // Filter products that have optimized_sv and are selected
+      productsToTranslate = batch.products.filter(product => {
+        const hasOptimizedSv = product.optimized_sv && product.optimized_sv.trim()
+        const isSelected = !selectedProductIds || selectedProductIds.length === 0 || 
+                          selectedProductIds.includes(product.id)
+        return hasOptimizedSv && isSelected
+      })
 
-    if (productsToTranslate.length === 0) {
-      return NextResponse.json(
-        { error: 'No optimized products found for translation' },
-        { status: 400 }
-      )
+      if (productsToTranslate.length === 0) {
+        return NextResponse.json(
+          { error: 'No optimized products found for translation' },
+          { status: 400 }
+        )
+      }
+
+      console.log(`[TRANSLATE] Starting translation for ${productsToTranslate.length} products`)
+    } else {
+      // For UI elements, we need to translate the empty values
+      const uiItemsToTranslate = batch.ui_items.filter(item => {
+        const isSelected = !selectedProductIds || selectedProductIds.length === 0 || 
+                          selectedProductIds.includes(item.id)
+        return isSelected
+      })
+
+      if (uiItemsToTranslate.length === 0) {
+        return NextResponse.json(
+          { error: 'No UI items found for translation' },
+          { status: 400 }
+        )
+      }
+
+      console.log(`[TRANSLATE] Starting translation for ${uiItemsToTranslate.length} UI items`)
+      
+      // Update batch status
+      await prisma.productBatch.update({
+        where: { id: batchId },
+        data: { status: 'running' }
+      })
+
+      // Return jobId immediately and process asynchronously
+      const jobId = `ui-translate-${batchId}-${Date.now()}`
+      
+      // Start async processing
+      setTimeout(async () => {
+        // Process each UI item directly with progress tracking
+        for (let i = 0; i < uiItemsToTranslate.length; i++) {
+          const uiItem = uiItemsToTranslate[i]
+        
+          for (const language of languages) {
+            try {
+              console.log(`[TRANSLATE] Processing UI item: ${uiItem.name} -> ${language}`)
+              
+              // Set status to processing
+              await prisma.uIItem.update({
+                where: { id: uiItem.id },
+                data: { status: 'processing' }
+              })
+              
+              // Get current values
+              const currentValues = JSON.parse(uiItem.values)
+              
+              // Find source text (prefer sv-SE, fallback to en-US)
+              const sourceText = currentValues['sv-SE'] || currentValues['en-US'] || ''
+              
+              console.log(`[TRANSLATE] Source text for ${uiItem.name}: "${sourceText}"`)
+              
+              if (sourceText && sourceText.trim()) {
+                // Translate using LLM
+                console.log(`[TRANSLATE] Calling translateTo with: "${sourceText}", language: ${language}`)
+                
+                let translatedText: string
+                try {
+                  translatedText = await translateTo({
+                    text: sourceText,
+                    target: language as 'da' | 'no'
+                  })
+                  console.log(`[TRANSLATE] translateTo returned: "${translatedText}"`)
+                } catch (translateError) {
+                  console.error(`[TRANSLATE] Error in translateTo:`, translateError)
+                  throw translateError
+                }
+                
+                // Update values with translation
+                const updatedValues = {
+                  ...currentValues,
+                  [language === 'no' ? 'no-NO' : 'da-DK']: translatedText
+                }
+                
+                // Update UI item
+                await prisma.uIItem.update({
+                  where: { id: uiItem.id },
+                  data: { 
+                    values: JSON.stringify(updatedValues),
+                    status: 'completed'
+                  }
+                })
+                
+                console.log(`[TRANSLATE] Completed UI item: ${uiItem.name} -> ${language}: ${translatedText}`)
+              } else {
+                console.log(`[TRANSLATE] Skipping UI item ${uiItem.name} - no source text`)
+                await prisma.uIItem.update({
+                  where: { id: uiItem.id },
+                  data: { status: 'completed' }
+                })
+              }
+              
+              // Add small delay to allow progress events to be sent
+              await new Promise(resolve => setTimeout(resolve, 500))
+            } catch (error) {
+              console.error(`[TRANSLATE] Error processing UI item ${uiItem.name}:`, error)
+              await prisma.uIItem.update({
+                where: { id: uiItem.id },
+                data: { 
+                  status: 'error',
+                  error_message: error instanceof Error ? error.message : 'Unknown error'
+                }
+              })
+            }
+          }
+        }
+
+        // Mark batch as completed
+        await prisma.productBatch.update({
+          where: { id: batchId },
+          data: { status: 'completed' }
+        })
+      }, 0) // Execute immediately but asynchronously
+
+      // Return jobId for progress tracking (same pattern as product translation)
+      return NextResponse.json({ 
+        message: 'UI elements translation started',
+        jobId: jobId,
+        total: uiItemsToTranslate.length
+      })
     }
-
-    console.log(`[TRANSLATE] Starting translation for ${productsToTranslate.length} products`)
     console.log(`[TRANSLATE] Languages:`, languages)
 
     // Update batch status
@@ -125,8 +250,12 @@ export async function POST(
       }
     }, 100)
 
+    // Return jobId immediately for progress tracking (same pattern as UI elements)
+    const jobId = `product-translate-${batchId}-${Date.now()}`
+    
     return NextResponse.json({
       message: 'Translation started',
+      jobId: jobId,
       batchId,
       productsCount: productsToTranslate.length,
       languages

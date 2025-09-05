@@ -4,13 +4,14 @@ import { z } from 'zod'
 
 const createBatchSchema = z.object({
   upload_id: z.string().min(1),
-  selected_product_ids: z.array(z.string()).min(1)
+  job_type: z.enum(['product_texts', 'ui_strings']),
+  selected_ids: z.array(z.string()).min(1)
 })
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { upload_id, selected_product_ids } = createBatchSchema.parse(body)
+    const { upload_id, job_type, selected_ids } = createBatchSchema.parse(body)
 
     // Get upload info
     const upload = await prisma.upload.findUnique({
@@ -30,28 +31,42 @@ export async function POST(request: NextRequest) {
         upload_id: upload_id,
         filename: upload.filename,
         upload_date: upload.upload_date,
-        total_products: selected_product_ids.length,
+        total_products: selected_ids.length,
+        job_type: job_type,
         status: 'pending'
       }
     })
 
-    // Update selected products with batch_id
-    await prisma.product.updateMany({
-      where: {
-        id: { in: selected_product_ids },
-        upload_id: upload_id
-      },
-      data: {
-        batch_id: batch.id
-      }
-    })
+    // Update selected items with batch_id based on job type
+    if (job_type === 'product_texts') {
+      await prisma.product.updateMany({
+        where: {
+          id: { in: selected_ids },
+          upload_id: upload_id
+        },
+        data: {
+          batch_id: batch.id
+        }
+      })
+    } else {
+      await prisma.uIItem.updateMany({
+        where: {
+          id: { in: selected_ids },
+          upload_id: upload_id
+        },
+        data: {
+          batch_id: batch.id
+        }
+      })
+    }
 
     return NextResponse.json({
       id: batch.id,
       upload_id: batch.upload_id,
       filename: batch.filename,
       total_products: batch.total_products,
-      status: batch.status
+      status: batch.status,
+      job_type: batch.job_type
     })
   } catch (error) {
     if (error instanceof z.ZodError) {
@@ -75,6 +90,12 @@ export async function GET() {
       orderBy: { created_at: 'desc' },
       include: {
         products: {
+          select: {
+            id: true,
+            status: true
+          }
+        },
+        ui_items: {
           select: {
             id: true,
             status: true

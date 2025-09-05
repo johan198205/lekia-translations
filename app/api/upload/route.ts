@@ -125,7 +125,12 @@ export async function POST(request: NextRequest) {
 
       return NextResponse.json({
         uploadId: upload.id,
-        uiStrings: result.uiStrings,
+        uiStrings: uiItems.map(item => ({
+          id: item.id,
+          name: item.name,
+          values: JSON.parse(item.values),
+          status: item.status
+        })),
         meta: result.meta
       });
     } else {
