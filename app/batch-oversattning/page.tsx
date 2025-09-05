@@ -373,6 +373,27 @@ export default function Home() {
     }
   }
 
+  const handleCreateBatchFromRemaining = async () => {
+    if (!selectedUpload) return
+
+    try {
+      // Load remaining products for manual selection
+      const response = await fetch(`/api/uploads/${selectedUpload.id}/products`)
+      if (response.ok) {
+        const data = await response.json()
+        setParsedProducts(data.products)
+        setProductsCount(data.products.length)
+        setSelectedIds(new Set(data.products.map((_: any, index: number) => index)))
+        setPhase('uploaded')
+        setUploadAlert(`✅ ${data.products.length} återstående produkter laddade. Välj produkter nedan och klicka "Skapa batch".`)
+      } else {
+        setUploadAlert('❌ Fel vid hämtning av återstående produkter')
+      }
+    } catch (err) {
+      setUploadAlert('❌ Fel vid hämtning av återstående produkter: Nätverksfel')
+    }
+  }
+
   const handleOptimize = async () => {
     if (!batchId) return
 
@@ -901,41 +922,65 @@ export default function Home() {
             )}
 
             {/* Befintliga batchar för vald upload */}
-            {selectedUpload && availableBatches.length > 0 && (
+            {selectedUpload && (
               <div className="space-y-2">
                 <label className="block text-sm font-medium text-gray-700">
                   Befintliga batchar för {selectedUpload.filename}:
                 </label>
-                <select
-                  value={selectedBatch?.id || ''}
-                  onChange={(e) => {
-                    const batch = availableBatches.find(b => b.id === e.target.value)
-                    if (batch) {
-                      handleBatchSelect(batch)
-                    } else {
-                      setSelectedBatch(null)
-                      setBatchId('')
-                      setParsedProducts([])
-                      setSelectedIds(new Set())
-                      setPhase('idle')
-                    }
-                  }}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="">-- Välj befintlig batch --</option>
-                  {availableBatches.map((batch) => (
-                    <option key={batch.id} value={batch.id}>
-                      {batch.filename} ({batch.total_products} produkter, status: {batch.status})
-                    </option>
-                  ))}
-                </select>
-                {selectedBatch && (
-                  <div className="text-sm text-gray-600 bg-gray-50 p-2 rounded">
-                    <p><strong>Batch:</strong> {selectedBatch.filename}</p>
-                    <p><strong>Skapad:</strong> {new Date(selectedBatch.created_at).toLocaleString('sv-SE')}</p>
-                    <p><strong>Totalt produkter:</strong> {selectedBatch.total_products}</p>
-                    <p><strong>Status:</strong> {selectedBatch.status}</p>
-                  </div>
+                
+                {/* Knapp för att välja återstående produkter */}
+                <div className="mb-3">
+                  <button
+                    onClick={handleCreateBatchFromRemaining}
+                    disabled={selectedUpload.products_remaining === 0}
+                    className={`px-4 py-2 rounded-md text-sm font-medium ${
+                      selectedUpload.products_remaining > 0
+                        ? 'bg-green-600 text-white hover:bg-green-700'
+                        : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                    }`}
+                    title={selectedUpload.products_remaining === 0 ? 'Inga återstående produkter att välja' : 'Välj återstående produkter för ny batch'}
+                  >
+                    Välj återstående produkter för ny batch
+                  </button>
+                  <p className="text-xs text-gray-500 mt-1">
+                    {selectedUpload.products_remaining} återstår
+                  </p>
+                </div>
+                
+                {availableBatches.length > 0 && (
+                  <>
+                    <select
+                      value={selectedBatch?.id || ''}
+                      onChange={(e) => {
+                        const batch = availableBatches.find(b => b.id === e.target.value)
+                        if (batch) {
+                          handleBatchSelect(batch)
+                        } else {
+                          setSelectedBatch(null)
+                          setBatchId('')
+                          setParsedProducts([])
+                          setSelectedIds(new Set())
+                          setPhase('idle')
+                        }
+                      }}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="">-- Välj befintlig batch --</option>
+                      {availableBatches.map((batch) => (
+                        <option key={batch.id} value={batch.id}>
+                          {batch.filename} ({batch.total_products} produkter, status: {batch.status})
+                        </option>
+                      ))}
+                    </select>
+                    {selectedBatch && (
+                      <div className="text-sm text-gray-600 bg-gray-50 p-2 rounded">
+                        <p><strong>Batch:</strong> {selectedBatch.filename}</p>
+                        <p><strong>Skapad:</strong> {new Date(selectedBatch.created_at).toLocaleString('sv-SE')}</p>
+                        <p><strong>Totalt produkter:</strong> {selectedBatch.total_products}</p>
+                        <p><strong>Status:</strong> {selectedBatch.status}</p>
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
             )}

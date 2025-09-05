@@ -87,7 +87,9 @@ export async function GET(
               include: {
                 products: {
                   select: {
-                    status: true
+                    status: true,
+                    translated_da: true,
+                    translated_no: true
                   }
                 }
               }
@@ -122,9 +124,14 @@ export async function GET(
               processedProducts = optimized + completed
               percent = total > 0 ? Math.round((processedProducts / total) * 100) : 0
             } else if (translating > 0) {
-              // Translation phase: count completed as processed (translating is in progress)
-              processedProducts = completed
-              percent = total > 0 ? Math.round((processedProducts / total) * 100) : 0
+              // Translation phase: count actual translations completed
+              // Count products that have at least one translation (DA or NO)
+              const productsWithTranslations = productsToCheck.filter(p => 
+                (p.translated_da && p.translated_da.trim()) || 
+                (p.translated_no && p.translated_no.trim())
+              ).length
+              processedProducts = productsWithTranslations
+              percent = total > 0 ? Math.round((productsWithTranslations / total) * 100) : 0
             } else {
               // Default: count non-pending as processed
               processedProducts = total - pending

@@ -91,13 +91,18 @@ export async function POST(
               updateData.translated_no = cleanedText
             }
             
-            // Set status to completed if both languages are done, otherwise keep as optimized
+            // Set status based on translation progress
             const hasDa = language === 'da' ? true : (product.translated_da && product.translated_da.trim())
             const hasNo = language === 'no' ? true : (product.translated_no && product.translated_no.trim())
             
             if (hasDa && hasNo) {
+              // Both languages translated - mark as completed
               updateData.status = 'completed'
+            } else if (hasDa || hasNo) {
+              // One language translated - keep as optimized (will be counted as progress)
+              updateData.status = 'optimized'
             } else {
+              // No translations yet - should not happen but keep as optimized
               updateData.status = 'optimized'
             }
             
