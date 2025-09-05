@@ -84,9 +84,15 @@ export async function POST(request: NextRequest) {
   }
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
+    const { searchParams } = new URL(request.url)
+    const jobType = searchParams.get('jobType')
+
+    const whereClause = jobType ? { job_type: jobType as 'product_texts' | 'ui_strings' } : {}
+
     const batches = await prisma.productBatch.findMany({
+      where: whereClause,
       orderBy: { created_at: 'desc' },
       include: {
         products: {

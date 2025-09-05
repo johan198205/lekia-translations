@@ -122,6 +122,8 @@ export default function Home() {
   const [drawerProduct, setDrawerProduct] = useState<Product | null>(null)
   const [drawerField, setDrawerField] = useState<'description_sv' | 'optimized_sv' | 'translated_no' | 'translated_da' | null>(null)
   const [isDrawerOpen, setIsDrawerOpen] = useState(false)
+  const [showDeleteModal, setShowDeleteModal] = useState(false)
+  const [deleteTarget, setDeleteTarget] = useState<{ type: 'upload', id: string, name: string } | null>(null)
   
   // Prompt settings state
   const [promptSettings, setPromptSettings] = useState<PromptSettings>({
@@ -912,6 +914,44 @@ export default function Home() {
     setDrawerField(null)
   }
 
+  const handleDeleteUpload = async () => {
+    if (!deleteTarget) return
+
+    try {
+      const response = await fetch(`/api/uploads/${deleteTarget.id}`, {
+        method: 'DELETE'
+      })
+
+      if (response.ok) {
+        // Remove the deleted upload from the list
+        setUploads(prev => prev.filter(upload => upload.id !== deleteTarget.id))
+        // Clear selection if the deleted upload was selected
+        if (selectedUpload?.id === deleteTarget.id) {
+          setSelectedUpload(null)
+          setSelectedBatch(null)
+          setUploadId('')
+          setParsedProducts([])
+          setParsedUIStrings([])
+          setSelectedIds(new Set())
+          setPhase('idle')
+          setAvailableBatches([])
+        }
+        setShowDeleteModal(false)
+        setDeleteTarget(null)
+      } else {
+        const errorData = await response.json()
+        setUploadAlert(`❌ Fel vid radering av upload: ${errorData.error || 'Okänt fel'}`)
+      }
+    } catch (err) {
+      setUploadAlert('❌ Nätverksfel vid radering av upload')
+    }
+  }
+
+  const openDeleteModal = (type: 'upload', id: string, name: string) => {
+    setDeleteTarget({ type, id, name })
+    setShowDeleteModal(true)
+  }
+
   const handleRegenerate = async () => {
     if (!batchId) return
 
@@ -1063,21 +1103,24 @@ export default function Home() {
                 <option value="product_texts">Produkttexter (befintligt)</option>
                 <option value="ui_strings">UI-element / Webbplatstexter (NY)</option>
               </select>
-              {jobType === 'ui_strings' && (
-                <div className="text-sm text-gray-600 bg-blue-50 p-3 rounded-md">
-                  <p><strong>UI-element format:</strong></p>
-                  <p>• Obligatorisk kolumn: <code>Name</code></p>
-                  <p>• Språkkolumner: <code>en-US</code>, <code>sv-SE</code>, <code>no-NO</code> (och fler)</p>
-                  <p>• Tomma fält tillåts (t.ex. no-NO tom i given fil)</p>
-                </div>
-              )}
             </div>
             
             {/* Befintliga uploads */}
             <div className="space-y-2">
-              <label className="block text-sm font-medium text-gray-700">
-                Befintliga uploads:
-              </label>
+              <div className="flex justify-between items-center">
+                <label className="block text-sm font-medium text-gray-700">
+                  Befintliga uploads:
+                </label>
+                {selectedUpload && (
+                  <button
+                    onClick={() => openDeleteModal('upload', selectedUpload.id, selectedUpload.filename)}
+                    className="bg-red-600 text-white px-2 py-1 rounded-md hover:bg-red-700 text-xs"
+                    title="Radera upload"
+                  >
+                    🗑️ Radera upload
+                  </button>
+                )}
+              </div>
               <select
                 value={selectedUpload?.id || ''}
                 onChange={(e) => {
@@ -1106,15 +1149,6 @@ export default function Home() {
                   </option>
                 ))}
               </select>
-              {selectedUpload && (
-                <div className="text-sm text-gray-600 bg-gray-50 p-2 rounded">
-                  <p><strong>Fil:</strong> {selectedUpload.filename}</p>
-                  <p><strong>Uppladdad:</strong> {new Date(selectedUpload.upload_date).toLocaleString('sv-SE')}</p>
-                  <p><strong>Totalt produkter:</strong> {selectedUpload.total_products}</p>
-                  <p><strong>Produkter kvar att optimera:</strong> {selectedUpload.products_remaining}</p>
-                  <p><strong>Skapade batches:</strong> {selectedUpload.batches_count}</p>
-                </div>
-              )}
             </div>
 
             {/* Befintliga batchar för vald upload */}
@@ -1138,9 +1172,6 @@ export default function Home() {
                   >
                     Välj återstående produkter för ny batch
                   </button>
-                  <p className="text-xs text-gray-500 mt-1">
-                    {selectedUpload.products_remaining} återstår
-                  </p>
                 </div>
                 
                 {availableBatches.length > 0 && (
@@ -1168,22 +1199,11 @@ export default function Home() {
                         </option>
                       ))}
                     </select>
-                    {selectedBatch && (
-                      <div className="text-sm text-gray-600 bg-gray-50 p-2 rounded">
-                        <p><strong>Batch:</strong> {selectedBatch.filename}</p>
-                        <p><strong>Skapad:</strong> {new Date(selectedBatch.created_at).toLocaleString('sv-SE')}</p>
-                        <p><strong>Totalt produkter:</strong> {selectedBatch.total_products}</p>
-                        <p><strong>Status:</strong> {selectedBatch.status}</p>
-                      </div>
-                    )}
                   </>
                 )}
               </div>
             )}
 
-            {uploads.length > 0 && (
-              <div className="text-center text-gray-500">eller</div>
-            )}
 
             {/* Ny fil-upload */}
             <div className="space-y-2">
@@ -1197,11 +1217,6 @@ export default function Home() {
                 disabled={selectedBatch !== null}
                 className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 disabled:opacity-50 disabled:cursor-not-allowed"
               />
-              {file && (
-                <p className="text-sm text-gray-600">
-                  Vald fil: {file.name} ({(file.size / 1024 / 1024).toFixed(2)} MB)
-                </p>
-              )}
               {error && (
                 <p className="text-sm text-red-600">{error}</p>
               )}
@@ -1413,21 +1428,23 @@ export default function Home() {
                         >
                           Översätt till norska (NO)
                         </button>
-                        <button
-                          onClick={() => handleTranslateSpecific('da')}
-                          disabled={!batchId || !allHaveOptimizedSv || !hasSelectedProducts || phase === 'translating'}
-                          className="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
-                          title={!allHaveOptimizedSv ? "Kräver optimerad svensk text" : ""}
-                        >
-                          Översätt till danska (DK)
-                        </button>
+                        {jobType === 'product_texts' && (
+                          <button
+                            onClick={() => handleTranslateSpecific('da')}
+                            disabled={!batchId || !allHaveOptimizedSv || !hasSelectedProducts || phase === 'translating'}
+                            className="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
+                            title={!allHaveOptimizedSv ? "Kräver optimerad svensk text" : ""}
+                          >
+                            Översätt till danska (DK)
+                          </button>
+                        )}
                       </>
                     )
                   })()}
                 </>
               ) : (
                 <>
-                  {/* Översättningsknappar för UI-element */}
+                  {/* Översättningsknappar för UI-element - endast norska */}
                   <button
                     onClick={() => handleTranslateSpecific('no')}
                     disabled={!batchId || selectedIds.size === 0 || phase === 'translating'}
@@ -1435,27 +1452,10 @@ export default function Home() {
                   >
                     Översätt till norska (no-NO)
                   </button>
-                  <button
-                    onClick={() => handleTranslateSpecific('da')}
-                    disabled={!batchId || selectedIds.size === 0 || phase === 'translating'}
-                    className="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
-                  >
-                    Översätt till danska (da-DK)
-                  </button>
                 </>
               )}
             </div>
             
-            {/* Debug info - only in development */}
-            {process.env.NODE_ENV === 'development' && (
-              <div className="mt-2 p-2 bg-gray-100 rounded text-xs">
-                <p><strong>Debug info:</strong></p>
-                <p>Phase: {phase}</p>
-                <p>Batch ID: {batchId || 'Ingen'}</p>
-                <p>Selected IDs: {selectedIds.size} av {jobType === 'product_texts' ? parsedProducts.length : parsedUIStrings.length}</p>
-                <p>Selected indices: {Array.from(selectedIds).slice(0, 10).join(', ')}{selectedIds.size > 10 ? '...' : ''}</p>
-              </div>
-            )}
             
             {phase === 'optimizing' && (
               <div className="space-y-3">
@@ -1712,36 +1712,10 @@ export default function Home() {
               </div>
             )}
             
-            {/* Debug text - only in development */}
-            {process.env.NODE_ENV === 'development' && (
-              <p className="text-xs text-gray-500">
-                Prompt-inställningar används lokalt (nästa steg kopplar in servern).
-              </p>
-            )}
           </div>
         </div>
         )}
 
-        {/* UI Strings Summary - endast för UI-element */}
-        {jobType === 'ui_strings' && phase === 'uploaded' && parsedUIStrings.length > 0 && (
-          <div className="bg-white rounded-lg shadow-md p-6 mb-6">
-            <h2 className="text-xl font-semibold mb-4">D) UI-element Sammanfattning</h2>
-            <div className="space-y-4">
-              <div className="bg-blue-50 p-4 rounded-lg">
-                <h3 className="font-medium text-blue-900 mb-2">Import Sammanfattning</h3>
-                <p className="text-blue-800">
-                  ✅ {parsedUIStrings.length} UI-element importerade
-                </p>
-                <p className="text-blue-800">
-                  📝 Språk hittade: {Object.keys(parsedUIStrings[0]?.values || {}).join(', ')}
-                </p>
-                <p className="text-blue-800 text-sm mt-2">
-                  UI-elementen är redo för batch-skapande. Ingen optimering eller översättning behövs.
-                </p>
-              </div>
-            </div>
-          </div>
-        )}
 
         {/* F) Export-sektion */}
         <div className="bg-white rounded-lg shadow-md p-6 mb-6">
@@ -1762,12 +1736,6 @@ export default function Home() {
           </div>
         </div>
 
-        {/* TODO för framtida e2e-tester */}
-        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mt-8">
-          <p className="text-sm text-yellow-800">
-            <strong>TODO:</strong> add e2e/UI tests in next step
-          </p>
-        </div>
 
         {/* Regenerate Modal */}
         {showRegenerateModal && (
@@ -1812,6 +1780,39 @@ export default function Home() {
                 </button>
                 <button
                   onClick={() => setShowRegenerateModal(false)}
+                  className="bg-gray-600 text-white px-4 py-2 rounded-md hover:bg-gray-700"
+                >
+                  Avbryt
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Delete Confirmation Modal */}
+        {showDeleteModal && deleteTarget && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+              <h3 className="text-lg font-semibold mb-4">
+                Bekräfta radering
+              </h3>
+              <p className="text-sm text-gray-600 mb-4">
+                Är du säker på att du vill radera uploaden "{deleteTarget.name}"?
+                Detta kommer också att radera alla relaterade batchar och produkter/UI-element.
+              </p>
+              
+              <div className="flex gap-3">
+                <button
+                  onClick={handleDeleteUpload}
+                  className="bg-red-600 text-white px-4 py-2 rounded-md hover:bg-red-700"
+                >
+                  Radera
+                </button>
+                <button
+                  onClick={() => {
+                    setShowDeleteModal(false)
+                    setDeleteTarget(null)
+                  }}
                   className="bg-gray-600 text-white px-4 py-2 rounded-md hover:bg-gray-700"
                 >
                   Avbryt

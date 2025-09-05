@@ -56,3 +56,46 @@ export async function GET(
     )
   }
 }
+
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id: batchId } = await params
+
+    // Check if batch exists and get its status
+    const batch = await prisma.productBatch.findUnique({
+      where: { id: batchId },
+      select: { id: true, status: true }
+    })
+
+    if (!batch) {
+      return NextResponse.json(
+        { error: 'Batch not found' },
+        { status: 404 }
+      )
+    }
+
+    // Prevent deletion of processing or exported batches
+    if (batch.status === 'running' || batch.status === 'pending') {
+      return NextResponse.json(
+        { error: 'Cannot delete batch that is currently processing' },
+        { status: 400 }
+      )
+    }
+
+    // Delete batch and cascade to related items
+    await prisma.productBatch.delete({
+      where: { id: batchId }
+    })
+
+    return NextResponse.json({ ok: true })
+  } catch (error) {
+    console.error('Delete batch error:', error)
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 }
+    )
+  }
+}
