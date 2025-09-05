@@ -13,15 +13,16 @@ interface Product {
 
 interface ProductDrawerProps {
   product: Product | null
-  field: 'description_sv' | 'optimized_sv' | 'translated_no' | null
+  field: 'description_sv' | 'optimized_sv' | 'translated_no' | 'translated_da' | null
   isOpen: boolean
   onClose: () => void
-  onSave: (productId: string, updates: { description_sv?: string; description_no?: string; optimized_sv?: string }) => Promise<void>
+  onSave: (productId: string, updates: { description_sv?: string; description_no?: string; description_da?: string; optimized_sv?: string }) => Promise<void>
 }
 
 export default function ProductDrawer({ product, field, isOpen, onClose, onSave }: ProductDrawerProps) {
   const [descriptionSv, setDescriptionSv] = useState('')
   const [descriptionNo, setDescriptionNo] = useState('')
+  const [descriptionDa, setDescriptionDa] = useState('')
   const [isSaving, setIsSaving] = useState(false)
   const [hasChanges, setHasChanges] = useState(false)
 
@@ -31,12 +32,19 @@ export default function ProductDrawer({ product, field, isOpen, onClose, onSave 
       if (field === 'description_sv') {
         setDescriptionSv(product.description_sv || '')
         setDescriptionNo('') // Not editing this field
+        setDescriptionDa('') // Not editing this field
       } else if (field === 'optimized_sv') {
         setDescriptionSv(product.optimized_sv || '')
         setDescriptionNo('') // Not editing this field
+        setDescriptionDa('') // Not editing this field
       } else if (field === 'translated_no') {
         setDescriptionSv('') // Not editing this field
         setDescriptionNo(product.translated_no || '')
+        setDescriptionDa('') // Not editing this field
+      } else if (field === 'translated_da') {
+        setDescriptionSv('') // Not editing this field
+        setDescriptionNo('') // Not editing this field
+        setDescriptionDa(product.translated_da || '')
       }
       setHasChanges(false)
     }
@@ -52,17 +60,19 @@ export default function ProductDrawer({ product, field, isOpen, onClose, onSave 
         hasChanges = descriptionSv !== (product.optimized_sv || '')
       } else if (field === 'translated_no') {
         hasChanges = descriptionNo !== (product.translated_no || '')
+      } else if (field === 'translated_da') {
+        hasChanges = descriptionDa !== (product.translated_da || '')
       }
       setHasChanges(hasChanges)
     }
-  }, [descriptionSv, descriptionNo, product, field])
+  }, [descriptionSv, descriptionNo, descriptionDa, product, field])
 
   const handleSave = async () => {
     if (!product || !hasChanges || !field) return
 
     setIsSaving(true)
     try {
-      const updates: { description_sv?: string; description_no?: string; optimized_sv?: string } = {}
+      const updates: { description_sv?: string; description_no?: string; description_da?: string; optimized_sv?: string } = {}
       
       if (field === 'description_sv') {
         updates.description_sv = descriptionSv
@@ -70,6 +80,8 @@ export default function ProductDrawer({ product, field, isOpen, onClose, onSave 
         updates.optimized_sv = descriptionSv
       } else if (field === 'translated_no') {
         updates.description_no = descriptionNo
+      } else if (field === 'translated_da') {
+        updates.description_da = descriptionDa
       }
       
       await onSave(product.id, updates)
@@ -148,6 +160,20 @@ export default function ProductDrawer({ product, field, isOpen, onClose, onSave 
                 rows={20}
                 style={{ minHeight: '400px' }}
                 placeholder="Ange norsk beskrivning..."
+                autoFocus
+              />
+            </div>
+          )}
+
+          {field === 'translated_da' && (
+            <div className="drawer-field">
+              <label>Optimized_Description_da (redigerbar)</label>
+              <textarea
+                value={descriptionDa}
+                onChange={(e) => setDescriptionDa(e.target.value)}
+                rows={20}
+                style={{ minHeight: '400px' }}
+                placeholder="Ange dansk beskrivning..."
                 autoFocus
               />
             </div>

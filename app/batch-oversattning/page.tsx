@@ -1160,208 +1160,6 @@ export default function Home() {
           </div>
         </div>
 
-        {/* Prompt-inställningar panel */}
-        <div className="bg-white rounded-lg shadow-md p-6 mb-6">
-          <details className="group">
-            <summary className="cursor-pointer list-none">
-              <div className="flex items-center justify-between">
-                <h2 className="text-xl font-semibold">Prompt-inställningar</h2>
-                <div className="flex items-center gap-2">
-                                     <span className="text-xs px-2 py-1 bg-gray-100 text-gray-600 rounded">
-                     {openaiMode === 'stub' ? 'Stubb' : 'Live'}
-                   </span>
-                  <svg className="w-5 h-5 text-gray-400 group-open:rotate-180 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                  </svg>
-                </div>
-              </div>
-              
-              {/* Compact preview when collapsed */}
-              <div className="mt-2 text-sm text-gray-500 space-y-1">
-                <p>SV-optimering: {promptSettings.optimize.system.substring(0, 80)}...</p>
-                <p>Översättning: {promptSettings.translate.system.substring(0, 80)}...</p>
-                <p>Modell: {promptSettings.optimize.model} | Temp: {promptSettings.optimize.temperature}</p>
-              </div>
-            </summary>
-            
-            <div className="mt-6 space-y-6">
-              {/* SV-optimering inställningar */}
-              <div className="space-y-4">
-                <h3 className="text-lg font-medium text-gray-900">SV-optimering</h3>
-                
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Systemprompt
-                  </label>
-                  <textarea
-                    value={promptSettings.optimize.system}
-                    onChange={(e) => setPromptSettings(prev => ({
-                      ...prev,
-                      optimize: { ...prev.optimize, system: e.target.value }
-                    }))}
-                    rows={3}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    placeholder="roll + regler enligt SYSTEM.md, inga nya fakta, rubriklista"
-                  />
-                </div>
-                
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Rubriklista (1 rad/rubrik)
-                  </label>
-                  <textarea
-                    value={promptSettings.optimize.headers}
-                    onChange={(e) => setPromptSettings(prev => ({
-                      ...prev,
-                      optimize: { ...prev.optimize, headers: e.target.value }
-                    }))}
-                    rows={5}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    placeholder="# Kort beskrivning&#10;## Fördelar&#10;## Specifikationer (punktlista med nyckel: värde)&#10;## Användning&#10;## Leverans & innehåll"
-                  />
-                </div>
-                
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Max ord per sektion
-                    </label>
-                    <input
-                      type="number"
-                      value={promptSettings.optimize.maxWords}
-                      onChange={(e) => setPromptSettings(prev => ({
-                        ...prev,
-                        optimize: { ...prev.optimize, maxWords: parseInt(e.target.value) || 120 }
-                      }))}
-                      min="50"
-                      max="500"
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
-                  
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Temperatur
-                    </label>
-                    <input
-                      type="range"
-                      min="0.0"
-                      max="1.0"
-                      step="0.1"
-                      value={promptSettings.optimize.temperature}
-                      onChange={(e) => setPromptSettings(prev => ({
-                        ...prev,
-                        optimize: { ...prev.optimize, temperature: parseFloat(e.target.value) }
-                      }))}
-                      className="w-full"
-                    />
-                    <div className="text-xs text-gray-500 mt-1">
-                      {promptSettings.optimize.temperature}
-                    </div>
-                  </div>
-                </div>
-                
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Modell
-                    </label>
-                    <select
-                      value={promptSettings.optimize.model}
-                      onChange={(e) => setPromptSettings(prev => ({
-                        ...prev,
-                        optimize: { ...prev.optimize, model: e.target.value }
-                      }))}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    >
-                      <option value="gpt-4o-mini">gpt-4o-mini</option>
-                      <option value="gpt-4o">gpt-4o</option>
-                      <option value="gpt-3.5-turbo">gpt-3.5-turbo</option>
-                    </select>
-                  </div>
-                  
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Standard-ton (används om produkter saknar tone_hint)
-                    </label>
-                    <input
-                      type="text"
-                      value={promptSettings.optimize.toneDefault}
-                      onChange={(e) => setPromptSettings(prev => ({
-                        ...prev,
-                        optimize: { ...prev.optimize, toneDefault: e.target.value }
-                      }))}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      placeholder="t.ex. professionell, vänlig, teknisk"
-                    />
-                  </div>
-                </div>
-              </div>
-              
-              {/* Översättning inställningar */}
-              <div className="space-y-4">
-                <h3 className="text-lg font-medium text-gray-900">Översättning</h3>
-                
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Systemprompt
-                  </label>
-                  <textarea
-                    value={promptSettings.translate.system}
-                    onChange={(e) => setPromptSettings(prev => ({
-                      ...prev,
-                      translate: { ...prev.translate, system: e.target.value }
-                    }))}
-                    rows={3}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    placeholder="professionell översättare, bevara rubriker/punktlistor, ingen extra fakta"
-                  />
-                </div>
-                
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Temperatur
-                    </label>
-                    <input
-                      type="range"
-                      min="0.0"
-                      max="1.0"
-                      step="0.1"
-                      value={promptSettings.translate.temperature}
-                      onChange={(e) => setPromptSettings(prev => ({
-                        ...prev,
-                        translate: { ...prev.translate, temperature: parseFloat(e.target.value) }
-                      }))}
-                      className="w-full"
-                    />
-                    <div className="text-xs text-gray-500 mt-1">
-                      {promptSettings.translate.temperature}
-                    </div>
-                  </div>
-                  
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Modell
-                    </label>
-                    <select
-                      value={promptSettings.translate.model}
-                      onChange={(e) => setPromptSettings(prev => ({
-                        ...prev,
-                        translate: { ...prev.translate, model: e.target.value }
-                      }))}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    >
-                      <option value="gpt-4o-mini">gpt-4o-mini</option>
-                      <option value="gpt-4o">gpt-4o</option>
-                      <option value="gpt-3.5-turbo">gpt-3.5-turbo</option>
-                    </select>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </details>
-        </div>
 
         {/* D) Optimera & Översätt-sektion */}
         <div className="bg-white rounded-lg shadow-md p-6 mb-6">
@@ -1405,14 +1203,16 @@ export default function Home() {
               })()}
             </div>
             
-            {/* Debug info */}
-            <div className="mt-2 p-2 bg-gray-100 rounded text-xs">
-              <p><strong>Debug info:</strong></p>
-              <p>Phase: {phase}</p>
-              <p>Batch ID: {batchId || 'Ingen'}</p>
-              <p>Selected IDs: {selectedIds.size} av {parsedProducts.length}</p>
-              <p>Selected indices: {Array.from(selectedIds).slice(0, 10).join(', ')}{selectedIds.size > 10 ? '...' : ''}</p>
-            </div>
+            {/* Debug info - only in development */}
+            {process.env.NODE_ENV === 'development' && (
+              <div className="mt-2 p-2 bg-gray-100 rounded text-xs">
+                <p><strong>Debug info:</strong></p>
+                <p>Phase: {phase}</p>
+                <p>Batch ID: {batchId || 'Ingen'}</p>
+                <p>Selected IDs: {selectedIds.size} av {parsedProducts.length}</p>
+                <p>Selected indices: {Array.from(selectedIds).slice(0, 10).join(', ')}{selectedIds.size > 10 ? '...' : ''}</p>
+              </div>
+            )}
             
             {phase === 'optimizing' && (
               <div className="space-y-3">
@@ -1622,9 +1422,12 @@ export default function Home() {
               </div>
             )}
             
-            <p className="text-xs text-gray-500">
-              Prompt-inställningar används lokalt (nästa steg kopplar in servern).
-            </p>
+            {/* Debug text - only in development */}
+            {process.env.NODE_ENV === 'development' && (
+              <p className="text-xs text-gray-500">
+                Prompt-inställningar används lokalt (nästa steg kopplar in servern).
+              </p>
+            )}
           </div>
         </div>
 
