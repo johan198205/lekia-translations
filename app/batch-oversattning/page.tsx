@@ -30,6 +30,11 @@ interface Product {
   batch_id?: string;
 }
 
+interface UIString {
+  name: string;
+  values: Record<string, string>;
+}
+
 interface Upload {
   id: string;
   filename: string;
@@ -37,6 +42,7 @@ interface Upload {
   total_products: number;
   products_remaining: number;
   batches_count: number;
+  job_type: 'product_texts' | 'ui_strings';
   created_at: string;
   updated_at: string;
 }
@@ -72,8 +78,10 @@ type Phase = 'idle' | 'uploaded' | 'batched' | 'optimizing' | 'translating' | 'r
 
 export default function Home() {
   const [file, setFile] = useState<File | null>(null)
+  const [jobType, setJobType] = useState<'product_texts' | 'ui_strings'>('product_texts')
   const [productsCount, setProductsCount] = useState<number>(0)
   const [parsedProducts, setParsedProducts] = useState<Product[]>([])
+  const [parsedUIStrings, setParsedUIStrings] = useState<UIString[]>([])
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
   const [batchId, setBatchId] = useState<string>('')
   const [visibleRows, setVisibleRows] = useState<number>(200)
@@ -84,6 +92,9 @@ export default function Home() {
   const [selectedBatch, setSelectedBatch] = useState<Batch | null>(null)
   const [availableBatches, setAvailableBatches] = useState<Batch[]>([])
   const [isRegenerating, setIsRegenerating] = useState(false)
+
+  // Filter uploads based on selected jobType
+  const filteredUploads = uploads.filter(upload => upload.job_type === jobType)
   const [regenerateScope, setRegenerateScope] = useState<'all' | 'selected'>('all')
   const [showRegenerateModal, setShowRegenerateModal] = useState(false)
   const [progress, setProgress] = useState<Progress>({
@@ -243,6 +254,19 @@ export default function Home() {
     setError('')
     setUploadAlert('')
     setParsedProducts([])
+    setParsedUIStrings([])
+    setSelectedIds(new Set())
+    setSelectedUpload(null)
+    setUploadId('')
+  }
+
+  const handleJobTypeChange = (newJobType: 'product_texts' | 'ui_strings') => {
+    setJobType(newJobType)
+    setFile(null)
+    setError('')
+    setUploadAlert('')
+    setParsedProducts([])
+    setParsedUIStrings([])
     setSelectedIds(new Set())
     setSelectedUpload(null)
     setUploadId('')
@@ -312,6 +336,7 @@ export default function Home() {
 
     const formData = new FormData()
     formData.append('file', file)
+    formData.append('jobType', jobType)
 
     try {
       const response = await fetch('/api/upload', {
@@ -321,12 +346,23 @@ export default function Home() {
 
       if (response.ok) {
         const data = await response.json()
-        setProductsCount(data.products.length)
-        setParsedProducts(data.products)
-        setSelectedIds(new Set(data.products.map((_: any, index: number) => index)))
-        setUploadId(data.uploadId) // Set uploadId from upload response
-        setPhase('uploaded')
-        setUploadAlert(`✅ Fil uppladdad! ${data.products.length} produkter hittades.`)
+        
+        if (jobType === 'product_texts' && data.products) {
+          setProductsCount(data.products.length)
+          setParsedProducts(data.products)
+          setSelectedIds(new Set(data.products.map((_: any, index: number) => index)))
+          setUploadId(data.uploadId)
+          setPhase('uploaded')
+          setUploadAlert(`✅ Fil uppladdad! ${data.products.length} produkter hittades.`)
+        } else if (jobType === 'ui_strings' && data.uiStrings) {
+          setProductsCount(data.uiStrings.length)
+          setParsedUIStrings(data.uiStrings)
+          setSelectedIds(new Set(data.uiStrings.map((_: any, index: number) => index)))
+          setUploadId(data.uploadId)
+          setPhase('uploaded')
+          const locales = data.meta?.locales || []
+          setUploadAlert(`✅ Fil uppladdad! ${data.uiStrings.length} UI-element hittades. Språk: ${locales.join(', ')}`)
+        }
         
         // Reload uploads list to include the new upload
         const uploadsResponse = await fetch('/api/uploads')
@@ -620,8 +656,13 @@ export default function Home() {
     setLanguages(newLanguages)
   }
 
+  const getCurrentItems = () => {
+    return jobType === 'product_texts' ? parsedProducts : parsedUIStrings
+  }
+
   const handleSelectAll = () => {
-    setSelectedIds(new Set(parsedProducts.map((_, index) => index)))
+    const items = getCurrentItems()
+    setSelectedIds(new Set(items.map((_, index) => index)))
   }
 
   const handleDeselectAll = () => {
@@ -629,14 +670,16 @@ export default function Home() {
   }
 
   const handleSelectFirst = (count: number) => {
-    const indices = Array.from({ length: Math.min(count, parsedProducts.length) }, (_, i) => i)
+    const items = getCurrentItems()
+    const indices = Array.from({ length: Math.min(count, items.length) }, (_, i) => i)
     setSelectedIds(new Set(indices))
   }
 
   const handleSelectRandom = (count: number) => {
-    const indices = Array.from({ length: parsedProducts.length }, (_, i) => i)
+    const items = getCurrentItems()
+    const indices = Array.from({ length: items.length }, (_, i) => i)
     const shuffled = indices.sort(() => Math.random() - 0.5)
-    const selected = shuffled.slice(0, Math.min(count, parsedProducts.length))
+    const selected = shuffled.slice(0, Math.min(count, items.length))
     setSelectedIds(new Set(selected))
   }
 
@@ -877,49 +920,74 @@ export default function Home() {
           <h2 className="text-xl font-semibold mb-4">A) Välj eller ladda upp Excel-fil</h2>
           <div className="space-y-4">
             
+            {/* Jobbtyp-val */}
+            <div className="space-y-2">
+              <label htmlFor="jobTypeSelect" className="block text-sm font-medium text-gray-700">
+                Jobbtyp:
+              </label>
+              <select
+                id="jobTypeSelect"
+                name="jobType"
+                value={jobType}
+                onChange={(e) => handleJobTypeChange(e.target.value as 'product_texts' | 'ui_strings')}
+                className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md"
+              >
+                <option value="product_texts">Produkttexter (befintligt)</option>
+                <option value="ui_strings">UI-element / Webbplatstexter (NY)</option>
+              </select>
+              {jobType === 'ui_strings' && (
+                <div className="text-sm text-gray-600 bg-blue-50 p-3 rounded-md">
+                  <p><strong>UI-element format:</strong></p>
+                  <p>• Obligatorisk kolumn: <code>Name</code></p>
+                  <p>• Språkkolumner: <code>en-US</code>, <code>sv-SE</code>, <code>no-NO</code> (och fler)</p>
+                  <p>• Tomma fält tillåts (t.ex. no-NO tom i given fil)</p>
+                </div>
+              )}
+            </div>
+            
             {/* Befintliga uploads */}
-            {uploads.length > 0 && (
-              <div className="space-y-2">
-                <label className="block text-sm font-medium text-gray-700">
-                  Befintliga uploads:
-                </label>
-                <select
-                  value={selectedUpload?.id || ''}
-                  onChange={(e) => {
-                    const upload = uploads.find(u => u.id === e.target.value)
-                    if (upload) {
-                      handleUploadSelect(upload)
-                    } else {
-                      setSelectedUpload(null)
-                      setSelectedBatch(null)
-                      setUploadId('')
-                      setParsedProducts([])
-                      setSelectedIds(new Set())
-                      setPhase('idle')
-                      setAvailableBatches([])
-                    }
-                  }}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  disabled={selectedBatch !== null}
-                >
-                  <option value="">-- Välj befintlig upload --</option>
-                  {uploads.map((upload) => (
-                    <option key={upload.id} value={upload.id}>
-                      {upload.filename} ({upload.products_remaining} produkter kvar, {upload.batches_count} batches)
-                    </option>
-                  ))}
-                </select>
-                {selectedUpload && (
-                  <div className="text-sm text-gray-600 bg-gray-50 p-2 rounded">
-                    <p><strong>Fil:</strong> {selectedUpload.filename}</p>
-                    <p><strong>Uppladdad:</strong> {new Date(selectedUpload.upload_date).toLocaleString('sv-SE')}</p>
-                    <p><strong>Totalt produkter:</strong> {selectedUpload.total_products}</p>
-                    <p><strong>Produkter kvar att optimera:</strong> {selectedUpload.products_remaining}</p>
-                    <p><strong>Skapade batches:</strong> {selectedUpload.batches_count}</p>
-                  </div>
-                )}
-              </div>
-            )}
+            <div className="space-y-2">
+              <label className="block text-sm font-medium text-gray-700">
+                Befintliga uploads:
+              </label>
+              <select
+                value={selectedUpload?.id || ''}
+                onChange={(e) => {
+                  const upload = uploads.find(u => u.id === e.target.value)
+                  if (upload) {
+                    handleUploadSelect(upload)
+                  } else {
+                    setSelectedUpload(null)
+                    setSelectedBatch(null)
+                    setUploadId('')
+                    setParsedProducts([])
+                    setSelectedIds(new Set())
+                    setPhase('idle')
+                    setAvailableBatches([])
+                  }
+                }}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                disabled={selectedBatch !== null}
+              >
+                <option value="">-- Välj befintlig upload --</option>
+                {uploads
+                  .filter(upload => upload.job_type === jobType)
+                  .map((upload) => (
+                  <option key={upload.id} value={upload.id}>
+                    {upload.filename} ({upload.products_remaining} {jobType === 'product_texts' ? 'produkter' : 'UI-element'} kvar, {upload.batches_count} batches)
+                  </option>
+                ))}
+              </select>
+              {selectedUpload && (
+                <div className="text-sm text-gray-600 bg-gray-50 p-2 rounded">
+                  <p><strong>Fil:</strong> {selectedUpload.filename}</p>
+                  <p><strong>Uppladdad:</strong> {new Date(selectedUpload.upload_date).toLocaleString('sv-SE')}</p>
+                  <p><strong>Totalt produkter:</strong> {selectedUpload.total_products}</p>
+                  <p><strong>Produkter kvar att optimera:</strong> {selectedUpload.products_remaining}</p>
+                  <p><strong>Skapade batches:</strong> {selectedUpload.batches_count}</p>
+                </div>
+              )}
+            </div>
 
             {/* Befintliga batchar för vald upload */}
             {selectedUpload && (
@@ -1032,9 +1100,11 @@ export default function Home() {
         </div>
 
         {/* B) Produkturval-sektion */}
-        {phase === 'uploaded' && parsedProducts.length > 0 && (
+        {phase === 'uploaded' && ((jobType === 'product_texts' && parsedProducts.length > 0) || (jobType === 'ui_strings' && parsedUIStrings.length > 0)) && (
           <div className="bg-white rounded-lg shadow-md p-6 mb-6">
-            <h2 className="text-xl font-semibold mb-4">B) Välj produkter ({selectedIds.size} av {parsedProducts.length})</h2>
+            <h2 className="text-xl font-semibold mb-4">
+              B) Välj {jobType === 'product_texts' ? 'produkter' : 'UI-element'} ({selectedIds.size} av {jobType === 'product_texts' ? parsedProducts.length : parsedUIStrings.length})
+            </h2>
             <div className="space-y-4">
               {/* Urvalsknappar */}
               <div className="flex flex-wrap gap-2">
@@ -1084,17 +1154,21 @@ export default function Home() {
                       <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         <input
                           type="checkbox"
-                          checked={selectedIds.size === parsedProducts.length && parsedProducts.length > 0}
-                          onChange={selectedIds.size === parsedProducts.length ? handleDeselectAll : handleSelectAll}
+                          checked={selectedIds.size === getCurrentItems().length && getCurrentItems().length > 0}
+                          onChange={selectedIds.size === getCurrentItems().length ? handleDeselectAll : handleSelectAll}
                           className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                         />
                       </th>
-                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Produktnamn</th>
-                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Beskrivning</th>
+                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        {jobType === 'product_texts' ? 'Produktnamn' : 'Namn'}
+                      </th>
+                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        {jobType === 'product_texts' ? 'Beskrivning' : 'Värden'}
+                      </th>
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
-                    {parsedProducts.slice(0, visibleRows).map((product, index) => (
+                    {getCurrentItems().slice(0, visibleRows).map((item, index) => (
                       <tr key={index} className="hover:bg-gray-50">
                         <td className="px-3 py-2">
                           <input
@@ -1105,12 +1179,22 @@ export default function Home() {
                           />
                         </td>
                         <td className="px-3 py-2 text-sm font-medium text-gray-900">
-                          {product.name_sv}
+                          {jobType === 'product_texts' ? (item as Product).name_sv : (item as UIString).name}
                         </td>
                         <td className="px-3 py-2 text-sm text-gray-500">
-                          {product.description_sv.length > 120 
-                            ? `${product.description_sv.substring(0, 120)}...` 
-                            : product.description_sv}
+                          {jobType === 'product_texts' ? (
+                            (item as Product).description_sv.length > 120 
+                              ? `${(item as Product).description_sv.substring(0, 120)}...` 
+                              : (item as Product).description_sv
+                          ) : (
+                            <div className="space-y-1">
+                              {Object.entries((item as UIString).values).map(([locale, value]) => (
+                                <div key={locale} className="text-xs">
+                                  <span className="font-medium">{locale}:</span> {value || '(tom)'}
+                                </div>
+                              ))}
+                            </div>
+                          )}
                         </td>
                       </tr>
                     ))}
@@ -1119,16 +1203,16 @@ export default function Home() {
               </div>
               
               {/* Visa fler-knapp */}
-              {visibleRows < parsedProducts.length && (
+              {visibleRows < getCurrentItems().length && (
                 <div className="text-center">
                   <button
                     onClick={handleShowMore}
                     className="bg-gray-600 text-white px-4 py-2 rounded-md hover:bg-gray-700 text-sm"
                   >
-                    Visa fler ({Math.min(200, parsedProducts.length - visibleRows)} till)
+                    Visa fler ({Math.min(200, getCurrentItems().length - visibleRows)} till)
                   </button>
                   <p className="text-xs text-gray-500 mt-1">
-                    Visar {Math.min(visibleRows, parsedProducts.length)} av {parsedProducts.length} produkter
+                    Visar {Math.min(visibleRows, getCurrentItems().length)} av {getCurrentItems().length} {jobType === 'product_texts' ? 'produkter' : 'UI-element'}
                   </p>
                 </div>
               )}
@@ -1149,7 +1233,7 @@ export default function Home() {
                 Skapa batch
               </button>
               {selectedIds.size === 0 && (
-                <span className="text-sm text-red-600">⚠️ Välj minst en produkt för att skapa batch</span>
+                <span className="text-sm text-red-600">⚠️ Välj minst en {jobType === 'product_texts' ? 'produkt' : 'UI-element'} för att skapa batch</span>
               )}
             </div>
             {batchAlert && (
@@ -1161,9 +1245,10 @@ export default function Home() {
         </div>
 
 
-        {/* D) Optimera & Översätt-sektion */}
-        <div className="bg-white rounded-lg shadow-md p-6 mb-6">
-          <h2 className="text-xl font-semibold mb-4">D) Optimera & Översätt</h2>
+        {/* D) Optimera & Översätt-sektion - endast för produkttexter */}
+        {jobType === 'product_texts' && (
+          <div className="bg-white rounded-lg shadow-md p-6 mb-6">
+            <h2 className="text-xl font-semibold mb-4">D) Optimera & Översätt</h2>
           <div className="space-y-4">
             <div className="flex gap-4">
               <button
@@ -1430,7 +1515,28 @@ export default function Home() {
             )}
           </div>
         </div>
+        )}
 
+        {/* UI Strings Summary - endast för UI-element */}
+        {jobType === 'ui_strings' && phase === 'uploaded' && parsedUIStrings.length > 0 && (
+          <div className="bg-white rounded-lg shadow-md p-6 mb-6">
+            <h2 className="text-xl font-semibold mb-4">D) UI-element Sammanfattning</h2>
+            <div className="space-y-4">
+              <div className="bg-blue-50 p-4 rounded-lg">
+                <h3 className="font-medium text-blue-900 mb-2">Import Sammanfattning</h3>
+                <p className="text-blue-800">
+                  ✅ {parsedUIStrings.length} UI-element importerade
+                </p>
+                <p className="text-blue-800">
+                  📝 Språk hittade: {Object.keys(parsedUIStrings[0]?.values || {}).join(', ')}
+                </p>
+                <p className="text-blue-800 text-sm mt-2">
+                  UI-elementen är redo för batch-skapande. Ingen optimering eller översättning behövs.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* F) Export-sektion */}
         <div className="bg-white rounded-lg shadow-md p-6 mb-6">

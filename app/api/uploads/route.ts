@@ -34,6 +34,7 @@ export async function GET() {
         total_products: totalProducts,
         products_remaining: productsRemaining,
         batches_count: upload.batches.length,
+        job_type: upload.job_type,
         created_at: upload.created_at,
         updated_at: upload.updated_at
       }

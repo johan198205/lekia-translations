@@ -12,10 +12,18 @@ export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData();
     const file = formData.get('file') as File | null;
+    const jobType = (formData.get('jobType') as string) || 'product_texts';
 
     if (!file) {
       return NextResponse.json(
         { error: 'No file provided' },
+        { status: 400 }
+      );
+    }
+
+    if (!['product_texts', 'ui_strings'].includes(jobType)) {
+      return NextResponse.json(
+        { error: 'Invalid job type' },
         { status: 400 }
       );
     }
@@ -48,47 +56,81 @@ export async function POST(request: NextRequest) {
     const buffer = Buffer.from(await file.arrayBuffer());
 
     // Normalize Excel data
-    const result = await normalize(buffer);
+    const result = await normalize(buffer, jobType as 'product_texts' | 'ui_strings');
 
     // Create upload first
     const upload = await prisma.upload.create({
       data: {
         filename: file.name,
         upload_date: new Date(),
-        total_products: result.products.length
+        total_products: jobType === 'product_texts' ? (result.products?.length || 0) : (result.uiStrings?.length || 0),
+        job_type: jobType as 'product_texts' | 'ui_strings'
       }
     });
 
-    // Create products with upload_id (no batch_id initially)
-    const products = await Promise.all(
-      result.products.map(async (product) => {
-        return await prisma.product.create({
-          data: {
-            name_sv: product.name_sv,
-            description_sv: product.description_sv,
-            attributes: product.attributes,
-            tone_hint: product.tone_hint,
-            status: 'pending',
-            upload_id: upload.id
-          }
-        });
-      })
-    );
+    if (jobType === 'product_texts' && result.products) {
+      // Create products with upload_id (no batch_id initially)
+      const products = await Promise.all(
+        result.products.map(async (product) => {
+          return await prisma.product.create({
+            data: {
+              name_sv: product.name_sv,
+              description_sv: product.description_sv,
+              attributes: product.attributes,
+              tone_hint: product.tone_hint,
+              status: 'pending',
+              upload_id: upload.id
+            }
+          });
+        })
+      );
 
-    console.log(`[UPLOAD] Created ${products.length} products for upload ${upload.id}`);
-    console.log(`[UPLOAD] Product IDs:`, products.map(p => p.id));
+      console.log(`[UPLOAD] Created ${products.length} products for upload ${upload.id}`);
+      console.log(`[UPLOAD] Product IDs:`, products.map(p => p.id));
 
-    // Verify products were created by fetching them back
-    const verifyProducts = await prisma.product.findMany({
-      where: { upload_id: upload.id }
-    });
-    console.log(`[UPLOAD] Verified ${verifyProducts.length} products in database for upload ${upload.id}`);
+      // Verify products were created by fetching them back
+      const verifyProducts = await prisma.product.findMany({
+        where: { upload_id: upload.id }
+      });
+      console.log(`[UPLOAD] Verified ${verifyProducts.length} products in database for upload ${upload.id}`);
 
-    return NextResponse.json({
-      uploadId: upload.id,
-      products: result.products,
-      meta: result.meta
-    });
+      return NextResponse.json({
+        uploadId: upload.id,
+        products: result.products,
+        meta: result.meta
+      });
+    } else if (jobType === 'ui_strings' && result.uiStrings) {
+      // Create UI items with upload_id (no batch_id initially)
+      const uiItems = await Promise.all(
+        result.uiStrings.map(async (uiString) => {
+          return await prisma.uIItem.create({
+            data: {
+              name: uiString.name,
+              values: JSON.stringify(uiString.values),
+              status: 'pending',
+              upload_id: upload.id
+            }
+          });
+        })
+      );
+
+      console.log(`[UPLOAD] Created ${uiItems.length} UI items for upload ${upload.id}`);
+      console.log(`[UPLOAD] UI Item IDs:`, uiItems.map(item => item.id));
+
+      // Verify UI items were created by fetching them back
+      const verifyUIItems = await prisma.uIItem.findMany({
+        where: { upload_id: upload.id }
+      });
+      console.log(`[UPLOAD] Verified ${verifyUIItems.length} UI items in database for upload ${upload.id}`);
+
+      return NextResponse.json({
+        uploadId: upload.id,
+        uiStrings: result.uiStrings,
+        meta: result.meta
+      });
+    } else {
+      throw new Error('Invalid result structure for job type');
+    }
   } catch (error) {
     if (error instanceof NormalizationError) {
       if (error.message.includes('Missing required columns')) {

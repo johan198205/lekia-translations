@@ -15,8 +15,10 @@ model Upload {
   filename        String
   upload_date     DateTime
   total_products  Int
+  job_type        JobType  @default(product_texts)
   products        Product[]
   batches         ProductBatch[]
+  ui_items        UIItem[]
   created_at      DateTime @default(now())
   updated_at      DateTime @updatedAt
 }
@@ -28,7 +30,9 @@ model ProductBatch {
   upload_date     DateTime
   total_products  Int
   status          ProductBatchStatus
+  job_type        JobType  @default(product_texts)
   products        Product[]
+  ui_items        UIItem[]
   upload          Upload   @relation(fields: [upload_id], references: [id])
   created_at      DateTime @default(now())
   updated_at      DateTime @updatedAt
@@ -57,6 +61,33 @@ model Product {
 enum ProductBatchStatus {
   pending
   running
+  completed
+  error
+}
+
+model UIItem {
+  id              String   @id @default(cuid())
+  upload_id       String
+  batch_id        String?
+  name            String
+  values          String   // JSON string containing locale values
+  status          UIItemStatus @default(pending)
+  error_message   String?
+  created_at      DateTime @default(now())
+  updated_at      DateTime @updatedAt
+  
+  upload          Upload        @relation(fields: [upload_id], references: [id])
+  batch           ProductBatch? @relation(fields: [batch_id], references: [id])
+}
+
+enum JobType {
+  product_texts
+  ui_strings
+}
+
+enum UIItemStatus {
+  pending
+  processing
   completed
   error
 }

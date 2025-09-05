@@ -7,11 +7,18 @@ export interface Product {
   tone_hint?: string;
 }
 
+export interface UIString {
+  name: string;
+  values: Record<string, string>;
+}
+
 export interface NormalizeResult {
-  products: Product[];
+  products?: Product[];
+  uiStrings?: UIString[];
   meta: {
     rows: number;
     skipped: number;
+    locales?: string[];
   };
 }
 
@@ -32,7 +39,7 @@ export class NormalizationError extends Error {
   }
 }
 
-export async function normalize(buffer: Buffer | ArrayBuffer): Promise<NormalizeResult> {
+export async function normalize(buffer: Buffer | ArrayBuffer, jobType: 'product_texts' | 'ui_strings' = 'product_texts'): Promise<NormalizeResult> {
   try {
     const workbook = new ExcelJS.Workbook();
     // Convert to Buffer if needed and use any to bypass type issues
@@ -44,39 +51,78 @@ export async function normalize(buffer: Buffer | ArrayBuffer): Promise<Normalize
       throw new NormalizationError('Invalid workbook');
     }
 
-    const headers = getNormalizedHeaders(worksheet);
-    validateRequiredColumns(headers);
-    
-    const products: Product[] = [];
-    let skipped = 0;
-    
-    worksheet.eachRow((row, rowNumber) => {
-      if (rowNumber === 1) return; // Skip header row
-      
-      if (isEmptyRow(row)) {
-        skipped++;
-        return;
-      }
-      
-      const product = parseProductRow(row, headers);
-      if (product) {
-        products.push(product);
-      }
-    });
-
-    return {
-      products,
-      meta: {
-        rows: products.length,
-        skipped,
-      },
-    };
+    if (jobType === 'ui_strings') {
+      return await normalizeUIStrings(worksheet);
+    } else {
+      return await normalizeProducts(worksheet);
+    }
   } catch (error) {
     if (error instanceof NormalizationError) {
       throw error;
     }
     throw new NormalizationError('Invalid workbook');
   }
+}
+
+async function normalizeProducts(worksheet: ExcelJS.Worksheet): Promise<NormalizeResult> {
+  const headers = getNormalizedHeaders(worksheet);
+  validateRequiredColumns(headers);
+  
+  const products: Product[] = [];
+  let skipped = 0;
+  
+  worksheet.eachRow((row, rowNumber) => {
+    if (rowNumber === 1) return; // Skip header row
+    
+    if (isEmptyRow(row)) {
+      skipped++;
+      return;
+    }
+    
+    const product = parseProductRow(row, headers);
+    if (product) {
+      products.push(product);
+    }
+  });
+
+  return {
+    products,
+    meta: {
+      rows: products.length,
+      skipped,
+    },
+  };
+}
+
+async function normalizeUIStrings(worksheet: ExcelJS.Worksheet): Promise<NormalizeResult> {
+  const headers = getUIStringHeaders(worksheet);
+  validateUIStringColumns(headers);
+  
+  const uiStrings: UIString[] = [];
+  let skipped = 0;
+  
+  worksheet.eachRow((row, rowNumber) => {
+    if (rowNumber === 1) return; // Skip header row
+    
+    if (isEmptyRow(row)) {
+      skipped++;
+      return;
+    }
+    
+    const uiString = parseUIStringRow(row, headers);
+    if (uiString) {
+      uiStrings.push(uiString);
+    }
+  });
+
+  return {
+    uiStrings,
+    meta: {
+      rows: uiStrings.length,
+      skipped,
+      locales: headers.locales,
+    },
+  };
 }
 
 function getNormalizedHeaders(worksheet: ExcelJS.Worksheet): Record<string, number> {
@@ -155,6 +201,59 @@ function truncateDescription(description: string): string {
   }
   
   return truncated;
+}
+
+function getUIStringHeaders(worksheet: ExcelJS.Worksheet): { name: number; locales: string[]; localeColumns: Record<string, number> } {
+  const headerRow = worksheet.getRow(1);
+  const headers: { name: number; locales: string[]; localeColumns: Record<string, number> } = {
+    name: 0,
+    locales: [],
+    localeColumns: {}
+  };
+  
+  headerRow.eachCell((cell, colNumber) => {
+    const headerValue = String(cell.value || '').trim();
+    
+    if (headerValue.toLowerCase() === 'name') {
+      headers.name = colNumber;
+    } else if (/^[a-z]{2}-[A-Z]{2}$/.test(headerValue)) {
+      headers.locales.push(headerValue);
+      headers.localeColumns[headerValue] = colNumber;
+    }
+  });
+  
+  return headers;
+}
+
+function validateUIStringColumns(headers: { name: number; locales: string[]; localeColumns: Record<string, number> }): void {
+  if (headers.name === 0) {
+    throw new NormalizationError('Missing required column: Name');
+  }
+  
+  if (headers.locales.length === 0) {
+    throw new NormalizationError('No locale columns found (expected format: en-US, sv-SE, no-NO, etc.)');
+  }
+}
+
+function parseUIStringRow(row: ExcelJS.Row, headers: { name: number; locales: string[]; localeColumns: Record<string, number> }): UIString | null {
+  const name = getCellValue(row, headers.name);
+  
+  if (!name || !name.trim()) {
+    return null;
+  }
+  
+  const values: Record<string, string> = {};
+  
+  for (const locale of headers.locales) {
+    const colNumber = headers.localeColumns[locale];
+    const value = getCellValue(row, colNumber);
+    values[locale] = value || ''; // Allow empty values
+  }
+  
+  return {
+    name: name.trim(),
+    values,
+  };
 }
 
 // TODO: Litium-specifika alias för kolumnmappning
