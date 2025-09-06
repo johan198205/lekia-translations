@@ -48,9 +48,11 @@ export default function FardigaBatcharPage() {
           // Filter for batches with optimized products or completed status, sorted by created_at DESC
           const readyBatches = allBatches
             .filter((batch: Batch) => 
-              batch.status === 'completed' || 
-              (batch.products && batch.products.some((product: any) => product.status === 'optimized')) ||
-              (batch.ui_items && batch.ui_items.length > 0) // UI items are ready when they exist
+              batch.job_type === selectedJobType && (
+                batch.status === 'completed' || 
+                (batch.products && batch.products.some((product: any) => product.status === 'optimized')) ||
+                (batch.ui_items && batch.ui_items.length > 0) // UI items are ready when they exist
+              )
             )
             .sort((a: Batch, b: Batch) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
           setBatches(readyBatches)
@@ -235,7 +237,7 @@ export default function FardigaBatcharPage() {
                 <option value="">-- Välj en batch --</option>
                 {batches.map((batch) => (
                   <option key={batch.id} value={batch.id}>
-                    {batch.filename} ({batch.total_products} {selectedJobType === 'product_texts' ? 'produkter' : 'UI-element'}) - {new Date(batch.upload_date).toLocaleDateString('sv-SE')}
+                    {batch.filename} ({batch.total_products} {batch.job_type === 'product_texts' ? 'produkter' : 'UI-element'}) - {new Date(batch.upload_date).toLocaleDateString('sv-SE')}
                   </option>
                 ))}
               </select>
@@ -250,10 +252,10 @@ export default function FardigaBatcharPage() {
         {selectedBatch && (
           <div className="bg-white rounded-lg shadow-md p-6">
             <h2 className="text-xl font-semibold mb-4">
-              {selectedJobType === 'product_texts' ? 'Produkter' : 'UI-element'} i batch: {selectedBatch.filename}
+              {selectedBatch.job_type === 'product_texts' ? 'Produkter' : 'UI-element'} i batch: {selectedBatch.filename}
             </h2>
             <div className="overflow-x-auto">
-              {selectedJobType === 'product_texts' ? (
+              {selectedBatch.job_type === 'product_texts' ? (
                 <table className="w-full border-collapse border border-gray-300">
                   <thead>
                     <tr className="bg-gray-50">
@@ -368,10 +370,10 @@ export default function FardigaBatcharPage() {
                 </table>
               )}
             </div>
-            {((selectedJobType === 'product_texts' && selectedBatch.products.length > 0) || 
-              (selectedJobType === 'ui_strings' && selectedBatch.ui_items && selectedBatch.ui_items.length > 0)) && (
+            {((selectedBatch.job_type === 'product_texts' && selectedBatch.products.length > 0) || 
+              (selectedBatch.job_type === 'ui_strings' && selectedBatch.ui_items && selectedBatch.ui_items.length > 0)) && (
               <p className="text-sm text-gray-500 mt-4">
-                Visar {selectedJobType === 'product_texts' ? selectedBatch.products.length : selectedBatch.ui_items?.length || 0} {selectedJobType === 'product_texts' ? 'produkter' : 'UI-element'}
+                Visar {selectedBatch.job_type === 'product_texts' ? selectedBatch.products.length : selectedBatch.ui_items?.length || 0} {selectedBatch.job_type === 'product_texts' ? 'produkter' : 'UI-element'}
               </p>
             )}
           </div>
