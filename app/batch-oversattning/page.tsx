@@ -4,6 +4,10 @@ import { useState, useEffect, useRef, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import ProductDrawer from '../components/ProductDrawer'
 import ProgressBar from '../components/ProgressBar'
+import Wizard from '../components/Wizard'
+import ModernStepCard from '../components/ModernStepCard'
+import ModernSummaryCard from '../components/ModernSummaryCard'
+import ModernRadioCard from '../components/ModernRadioCard'
 
 interface Progress {
   percent: number
@@ -81,11 +85,13 @@ interface PromptSettings {
 }
 
 type Phase = 'idle' | 'uploaded' | 'batched' | 'optimizing' | 'translating' | 'readyToExport'
+type SourceType = 'existing' | 'new' | null
 
 function BatchOversattningContent() {
   const searchParams = useSearchParams()
   const [file, setFile] = useState<File | null>(null)
   const [jobType, setJobType] = useState<'product_texts' | 'ui_strings'>('product_texts')
+  const [sourceType, setSourceType] = useState<SourceType>(null)
   const [productsCount, setProductsCount] = useState<number>(0)
   const [parsedProducts, setParsedProducts] = useState<Product[]>([])
   const [parsedUIStrings, setParsedUIStrings] = useState<UIString[]>([])
@@ -110,6 +116,7 @@ function BatchOversattningContent() {
     counts: { pending: 0, optimizing: 0, optimized: 0, translating: 0, completed: 0, error: 0 }
   })
   const [phase, setPhase] = useState<Phase>('idle')
+  const [currentStep, setCurrentStep] = useState<number>(1)
   const [languages, setLanguages] = useState<Set<'da' | 'no'>>(new Set(['da' as const, 'no' as const]))
   const [error, setError] = useState<string>('')
   const [uploadAlert, setUploadAlert] = useState<string>('')
@@ -266,6 +273,7 @@ function BatchOversattningContent() {
     }
 
     setFile(selectedFile)
+    setSourceType('new') // Set sourceType when file is selected
     setError('')
     setUploadAlert('')
     setParsedProducts([])
@@ -278,6 +286,7 @@ function BatchOversattningContent() {
   const handleJobTypeChange = (newJobType: 'product_texts' | 'ui_strings') => {
     setJobType(newJobType)
     setFile(null)
+    setSourceType(null)
     setError('')
     setUploadAlert('')
     setParsedProducts([])
@@ -285,6 +294,10 @@ function BatchOversattningContent() {
     setSelectedIds(new Set())
     setSelectedUpload(null)
     setUploadId('')
+    setPhase('idle')
+    setBatchId('')
+    setSelectedBatch(null)
+    setCurrentStep(1) // Reset wizard to step 1 when job type changes
   }
 
   const handleUploadSelect = async (upload: Upload) => {
@@ -292,12 +305,24 @@ function BatchOversattningContent() {
     setSelectedBatch(null) // Clear batch selection
     setUploadId(upload.id)
     setFile(null)
+    setSourceType('existing') // Ensure sourceType is set
     setError('')
     setUploadAlert('')
     
     // Filter batches for this upload
     const uploadBatches = batches.filter(batch => batch.upload_id === upload.id)
     setAvailableBatches(uploadBatches)
+    
+    if (uploadBatches.length > 0) {
+      setUploadAlert(`✅ Upload vald: ${upload.filename}. Välj batch nedan eller skapa ny.`)
+    } else {
+      setUploadAlert(`✅ Upload vald: ${upload.filename}. Inga befintliga batchar. Skapa ny batch.`)
+    }
+  }
+
+  const handleLoadUploadData = async (upload: Upload) => {
+    // Filter batches for this upload
+    const uploadBatches = batches.filter(batch => batch.upload_id === upload.id)
     
     // If no batches exist for this upload, load items directly
     if (uploadBatches.length === 0) {
@@ -320,6 +345,7 @@ function BatchOversattningContent() {
             setUploadAlert(`✅ Upload vald: ${upload.filename} (${data.uiItems.length} UI-element)`)
           }
           setPhase('uploaded')
+          setCurrentStep(2)
         } else {
           setUploadAlert('❌ Fel vid hämtning av upload-data')
         }
@@ -362,6 +388,7 @@ function BatchOversattningContent() {
         }
         setBatchId(batch.id)
         setPhase('readyToExport') // Skip to ready state since batch already exists
+        setCurrentStep(3) // Advance to step 3: Optimize & Translate
       } else {
         setUploadAlert('❌ Fel vid hämtning av batch-data')
       }
@@ -396,6 +423,7 @@ function BatchOversattningContent() {
           setSelectedIds(new Set(data.products.map((_: any, index: number) => index)))
           setUploadId(data.uploadId)
           setPhase('uploaded')
+          setCurrentStep(2)
           setUploadAlert(`✅ Fil uppladdad! ${data.products.length} produkter hittades.`)
         } else if (jobType === 'ui_strings' && data.uiStrings) {
           setProductsCount(data.uiStrings.length)
@@ -403,6 +431,7 @@ function BatchOversattningContent() {
           setSelectedIds(new Set(data.uiStrings.map((_: any, index: number) => index)))
           setUploadId(data.uploadId)
           setPhase('uploaded')
+          setCurrentStep(2)
           const locales = data.meta?.locales || []
           setUploadAlert(`✅ Fil uppladdad! ${data.uiStrings.length} UI-element hittades. Språk: ${locales.join(', ')}`)
         }
@@ -438,6 +467,15 @@ function BatchOversattningContent() {
         selectedItemIds = Array.from(selectedIds).map(index => parsedUIStrings[index]?.id).filter(Boolean)
       }
       
+      console.log('Creating batch with:', {
+        upload_id: uploadId,
+        job_type: jobType,
+        selected_ids: selectedItemIds,
+        selectedIdsSize: selectedIds.size,
+        parsedProductsLength: parsedProducts.length,
+        parsedUIStringsLength: parsedUIStrings.length
+      })
+      
       const response = await fetch('/api/batches', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -461,7 +499,7 @@ function BatchOversattningContent() {
         
         setBatchAlert(`✅ Batch skapad! ${selectedIds.size} ${jobType === 'product_texts' ? 'produkter' : 'UI-element'} valda.`)
         
-        // Load the batch data to show the items immediately
+        // Load the batch data to show the items immediately and jump to step 3
         try {
           const batchResponse = await fetch(`/api/batches/${data.id}`)
           if (batchResponse.ok) {
@@ -481,6 +519,8 @@ function BatchOversattningContent() {
         } catch (err) {
           console.error('Error loading batch data:', err)
         }
+        
+        setCurrentStep(3) // Advance to step 3: Optimize & Translate
       } else {
         const errorData = await response.json()
         setBatchAlert(`❌ Fel vid skapande av batch: ${errorData.error || 'Okänt fel'}`)
@@ -1084,38 +1124,75 @@ function BatchOversattningContent() {
     }
   }
 
-  return (
-    <div className="wizard-container">
-      <div className="wizard-header">
-        <h1 className="wizard-title">
-          {jobType === 'product_texts' ? 'Produktöversättning' : 'UI-element Översättning'}
-        </h1>
-        <div className="wizard-steps">
-          <div className={`step ${phase === 'idle' || phase === 'uploaded' ? 'active' : phase === 'batched' || phase === 'optimizing' || phase === 'translating' || phase === 'readyToExport' ? 'completed' : ''}`}>
-            <span className="step-number">1</span>
-            <span className="step-label">Välj/Importera</span>
-          </div>
-          <div className={`step ${phase === 'batched' || phase === 'optimizing' || phase === 'translating' || phase === 'readyToExport' ? 'active' : ''}`}>
-            <span className="step-number">2</span>
-            <span className="step-label">Skapa batch</span>
-          </div>
-          <div className={`step ${phase === 'optimizing' || phase === 'translating' || phase === 'readyToExport' ? 'active' : ''}`}>
-            <span className="step-number">3</span>
-            <span className="step-label">{jobType === 'product_texts' ? 'Optimera & Översätt' : 'Översätt'}</span>
-          </div>
-          <div className={`step ${phase === 'readyToExport' ? 'active' : ''}`}>
-            <span className="step-number">4</span>
-            <span className="step-label">Exportera</span>
-          </div>
-        </div>
-      </div>
+  // Determine current step and step states
+  // No automatic step updates - we control steps manually
+  const steps = [
+    {
+      number: 1,
+      label: 'Välj källa',
+      isActive: currentStep === 1,
+      isCompleted: currentStep > 1
+    },
+    {
+      number: 2,
+      label: 'Välj rader & Skapa batch',
+      isActive: currentStep === 2,
+      isCompleted: currentStep > 2
+    },
+    {
+      number: 3,
+      label: jobType === 'product_texts' ? 'Optimera & Översätt' : 'Översätt',
+      isActive: currentStep === 3,
+      isCompleted: currentStep > 3
+    },
+    {
+      number: 4,
+      label: 'Exportera',
+      isActive: currentStep === 4,
+      isCompleted: false
+    }
+  ]
 
-      <div className="wizard-content">
-        {/* A) Upload-sektion */}
-        <div className="bg-white rounded-lg shadow-md p-6 mb-6">
-          <h2 className="text-xl font-semibold mb-4">A) Välj eller ladda upp Excel-fil</h2>
+  return (
+    <Wizard 
+      title={jobType === 'product_texts' ? 'Produktöversättning' : 'UI-element Översättning'}
+      currentStep={currentStep}
+      totalSteps={4}
+      steps={steps}
+    >
+        {/* Step 1: Source Selection - Only show if currentStep === 1 */}
+        {currentStep === 1 && (
+          <ModernStepCard
+            stepNumber={1}
+            title="Välj källa"
+            description="Välj om du vill fortsätta med en befintlig upload eller ladda upp en ny fil"
+            icon="📁"
+            isActive={true}
+            isCompleted={false}
+            ctaText={(() => {
+              console.log('CTA check:', { sourceType, selectedUpload: !!selectedUpload, selectedBatch: !!selectedBatch, file: !!file })
+              return (sourceType === 'existing' && selectedUpload && selectedBatch) || 
+                     (sourceType === 'new' && file)
+                ? "Fortsätt till nästa steg" 
+                : undefined
+            })()}
+            onCtaClick={async () => {
+              if (sourceType === 'existing' && selectedUpload && selectedBatch) {
+                // For existing batches, the step transition is handled in handleBatchSelect
+                // This CTA is now redundant since batch selection automatically advances to step 3
+                console.log('CTA clicked for existing batch - step transition handled by handleBatchSelect')
+              } else if (sourceType === 'new' && file) {
+                // For new files, upload (handleUpload will set step 2)
+                await handleUpload()
+              }
+            }}
+            ctaDisabled={
+              !sourceType || 
+              (sourceType === 'existing' && (!selectedUpload || !selectedBatch)) || 
+              (sourceType === 'new' && !file)
+            }
+          >
           <div className="space-y-4">
-            
             {/* Jobbtyp-val */}
             <div className="space-y-2">
               <label htmlFor="jobTypeSelect" className="block text-sm font-medium text-gray-700">
@@ -1132,140 +1209,98 @@ function BatchOversattningContent() {
                 <option value="ui_strings">UI-element / Webbplatstexter (NY)</option>
               </select>
             </div>
-            
-            {/* Befintliga uploads */}
-            <div className="space-y-2">
-              <div className="flex justify-between items-center">
-                <label className="block text-sm font-medium text-gray-700">
-                  Befintliga uploads:
-                </label>
-                {selectedUpload && (
-                  <button
-                    onClick={() => openDeleteModal('upload', selectedUpload.id, selectedUpload.filename)}
-                    className="bg-red-600 text-white px-2 py-1 rounded-md hover:bg-red-700 text-xs"
-                    title="Radera upload"
-                  >
-                    🗑️ Radera upload
-                  </button>
-                )}
-              </div>
-              <select
-                value={selectedUpload?.id || ''}
-                onChange={(e) => {
-                  const upload = uploads.find(u => u.id === e.target.value)
-                  if (upload) {
-                    handleUploadSelect(upload)
-                  } else {
-                    setSelectedUpload(null)
-                    setSelectedBatch(null)
-                    setUploadId('')
-                    setParsedProducts([])
-                    setSelectedIds(new Set())
-                    setPhase('idle')
-                    setAvailableBatches([])
-                  }
-                }}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                disabled={selectedBatch !== null}
-              >
-                <option value="">-- Välj befintlig upload --</option>
-                {uploads
-                  .filter(upload => upload.job_type === jobType)
-                  .map((upload) => (
-                  <option key={upload.id} value={upload.id}>
-                    {upload.filename} ({upload.products_remaining} {jobType === 'product_texts' ? 'produkter' : 'UI-element'} kvar, {upload.batches_count} batches)
-                  </option>
-                ))}
-              </select>
-            </div>
 
-            {/* Befintliga batchar för vald upload */}
-            {selectedUpload && (
-              <div className="space-y-2">
-                <label className="block text-sm font-medium text-gray-700">
-                  Befintliga batchar för {selectedUpload.filename}:
-                </label>
-                
-                {/* Knapp för att välja återstående produkter */}
-                <div className="mb-3">
-                  <button
-                    onClick={handleCreateBatchFromRemaining}
-                    disabled={selectedUpload.products_remaining === 0}
-                    className={`px-4 py-2 rounded-md text-sm font-medium ${
-                      selectedUpload.products_remaining > 0
-                        ? 'bg-green-600 text-white hover:bg-green-700'
-                        : 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                    }`}
-                    title={selectedUpload.products_remaining === 0 ? 'Inga återstående produkter att välja' : 'Välj återstående produkter för ny batch'}
-                  >
-                    Välj återstående produkter för ny batch
-                  </button>
-                </div>
-                
-                {availableBatches.length > 0 && (
-                  <>
+            {/* Radio cards for source selection */}
+            <div className="space-y-3">
+              <ModernRadioCard
+                id="existing-upload"
+                name="sourceType"
+                value="existing"
+                checked={sourceType === 'existing'}
+                onChange={setSourceType}
+                title="Fortsätt på befintlig upload"
+                description="Välj från tidigare uppladdade filer"
+                icon="📁"
+              >
+                {sourceType === 'existing' && (
+                  <div className="space-y-2">
                     <select
-                      value={selectedBatch?.id || ''}
+                      value={selectedUpload?.id || ''}
                       onChange={(e) => {
-                        const batch = availableBatches.find(b => b.id === e.target.value)
-                        if (batch) {
-                          handleBatchSelect(batch)
+                        const upload = uploads.find(u => u.id === e.target.value)
+                        if (upload) {
+                          handleUploadSelect(upload)
                         } else {
+                          setSelectedUpload(null)
                           setSelectedBatch(null)
-                          setBatchId('')
+                          setUploadId('')
                           setParsedProducts([])
                           setSelectedIds(new Set())
                           setPhase('idle')
+                          setAvailableBatches([])
                         }
                       }}
                       className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      disabled={selectedBatch !== null}
                     >
-                      <option value="">-- Välj befintlig batch --</option>
-                      {availableBatches.map((batch) => (
-                        <option key={batch.id} value={batch.id}>
-                          {batch.filename} ({batch.total_products} produkter, status: {batch.status})
+                      <option value="">-- Välj befintlig upload --</option>
+                      {uploads
+                        .filter(upload => upload.job_type === jobType)
+                        .map((upload) => (
+                        <option key={upload.id} value={upload.id}>
+                          {upload.filename} ({upload.products_remaining} {jobType === 'product_texts' ? 'produkter' : 'UI-element'} kvar, {upload.batches_count} batches)
                         </option>
                       ))}
                     </select>
-                  </>
+                    
+                    {selectedUpload && (
+                      <ModernSummaryCard
+                        title={selectedUpload.filename}
+                        items={[
+                          { label: 'Uppladdad', value: new Date(selectedUpload.upload_date).toLocaleDateString('sv-SE') },
+                          { label: 'Totalt', value: selectedUpload.total_products },
+                          { label: 'Kvar', value: selectedUpload.products_remaining },
+                          { label: 'Batchar', value: selectedUpload.batches_count }
+                        ]}
+                        onDelete={() => openDeleteModal('upload', selectedUpload.id, selectedUpload.filename)}
+                        showDelete={true}
+                      />
+                    )}
+                  </div>
                 )}
-              </div>
-            )}
+              </ModernRadioCard>
 
-
-            {/* Ny fil-upload */}
-            <div className="space-y-2">
-              <label className="block text-sm font-medium text-gray-700">
-                Ladda upp ny fil:
-              </label>
-              <input
-                type="file"
-                accept=".xlsx"
-                onChange={handleFileChange}
-                disabled={selectedBatch !== null}
-                className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 disabled:opacity-50 disabled:cursor-not-allowed"
-              />
-              {error && (
-                <p className="text-sm text-red-600">{error}</p>
-              )}
-              <button
-                onClick={handleUpload}
-                disabled={!file || selectedBatch !== null || isUploading}
-                className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
+              <ModernRadioCard
+                id="new-file"
+                name="sourceType"
+                value="new"
+                checked={sourceType === 'new'}
+                onChange={setSourceType}
+                title="Ladda upp ny fil"
+                description="Importera en ny Excel-fil"
+                icon="📤"
               >
-                {isUploading ? 'Laddar upp...' : 'Ladda upp ny fil'}
-              </button>
-              {selectedBatch && (
-                <p className="text-sm text-gray-500">
-                  Filuppladdning inaktiverad när batch är vald
-                </p>
-              )}
-              {isUploading && (
-                <div className="flex items-center gap-2 text-sm text-blue-600">
-                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
-                  <span>Laddar upp fil...</span>
-                </div>
-              )}
+                {sourceType === 'new' && (
+                  <div className="space-y-2">
+                    <input
+                      type="file"
+                      accept=".xlsx"
+                      onChange={handleFileChange}
+                      disabled={selectedBatch !== null}
+                      className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                    />
+                    {error && (
+                      <p className="text-sm text-red-600">{error}</p>
+                    )}
+                    {isUploading && (
+                      <div className="flex items-center gap-2 text-sm text-blue-600">
+                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+                        <span>Laddar upp fil...</span>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </ModernRadioCard>
             </div>
 
             {uploadAlert && (
@@ -1273,16 +1308,86 @@ function BatchOversattningContent() {
                 {uploadAlert}
               </p>
             )}
-          </div>
-        </div>
 
-        {/* B) Produkturval-sektion */}
-        {phase === 'uploaded' && ((jobType === 'product_texts' && parsedProducts.length > 0) || (jobType === 'ui_strings' && parsedUIStrings.length > 0)) && (
-          <div className="bg-white rounded-lg shadow-md p-6 mb-6">
-            <h2 className="text-xl font-semibold mb-4">
-              B) Välj {jobType === 'product_texts' ? 'produkter' : 'UI-element'} ({selectedIds.size} av {jobType === 'product_texts' ? parsedProducts.length : parsedUIStrings.length})
-            </h2>
+            {/* Batch selection for existing uploads */}
+            {sourceType === 'existing' && selectedUpload && availableBatches.length > 0 && (
+              <div className="space-y-2">
+                <label htmlFor="batchSelect" className="block text-sm font-medium text-gray-700">
+                  Välj befintlig batch:
+                </label>
+                <select
+                  id="batchSelect"
+                  value={selectedBatch?.id || ''}
+                  onChange={(e) => {
+                    const batch = availableBatches.find(b => b.id === e.target.value)
+                    if (batch) {
+                      handleBatchSelect(batch)
+                    }
+                  }}
+                  className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md"
+                >
+                  <option value="">-- Välj batch --</option>
+                  {availableBatches.map((batch) => (
+                    <option key={batch.id} value={batch.id}>
+                      {`Batch ${batch.id.slice(-8)} - ${batch.total_products || batch.total_ui_items || 'N/A'} ${jobType === 'product_texts' ? 'produkter' : 'UI-element'} (${batch.status})`}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            {/* Create new batch option */}
+            {sourceType === 'existing' && selectedUpload && (
+              <div className="space-y-2">
+                <label className="block text-sm font-medium text-gray-700">
+                  Eller skapa ny batch:
+                </label>
+                <button
+                  onClick={() => {
+                    setSelectedBatch(null)
+                    // Load data for new batch creation
+                    handleLoadUploadData(selectedUpload)
+                  }}
+                  className="w-full px-4 py-2 text-sm font-medium text-blue-600 bg-blue-50 border border-blue-200 rounded-md hover:bg-blue-100 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+                >
+                  ➕ Skapa ny batch
+                </button>
+              </div>
+            )}
+          </div>
+        </ModernStepCard>
+        )}
+
+        {/* Step 2: Row Selection & Batch Creation - Only show if currentStep === 2 */}
+        {currentStep === 2 && (
+          <ModernStepCard
+            stepNumber={2}
+            title="Välj rader & Skapa batch"
+            description={`Välj ${jobType === 'product_texts' ? 'produkter' : 'UI-element'} att inkludera i batchen och skapa sedan batchen`}
+            icon={jobType === 'product_texts' ? '📦' : '🌐'}
+            isActive={currentStep >= 2}
+            isCompleted={currentStep > 2}
+            ctaText="Skapa batch"
+            onCtaClick={async () => {
+              await handleCreateBatch()
+              // setCurrentStep(3) is now handled inside handleCreateBatch
+            }}
+            ctaDisabled={selectedIds.size === 0}
+          >
             <div className="space-y-4">
+              <div className="flex justify-between items-center">
+                <h3 className="text-lg font-medium">
+                  Välj {jobType === 'product_texts' ? 'produkter' : 'UI-element'} ({selectedIds.size} av {jobType === 'product_texts' ? parsedProducts.length : parsedUIStrings.length})
+                </h3>
+              </div>
+              {selectedIds.size === 0 && (
+                <p className="text-sm text-red-600">⚠️ Välj minst en {jobType === 'product_texts' ? 'produkt' : 'UI-element'} för att skapa batch</p>
+              )}
+              {batchAlert && (
+                <p className={`text-sm ${batchAlert.startsWith('✅') ? 'text-green-600' : 'text-red-600'}`}>
+                  {batchAlert}
+                </p>
+              )}
               {/* Urvalsknappar */}
               <div className="flex flex-wrap gap-2">
                 <button
@@ -1394,69 +1499,49 @@ function BatchOversattningContent() {
                 </div>
               )}
             </div>
-          </div>
+          </ModernStepCard>
         )}
 
-        {/* C) Skapa batch-sektion */}
-        <div className="bg-white rounded-lg shadow-md p-6 mb-6">
-          <h2 className="text-xl font-semibold mb-4">C) Skapa batch</h2>
-          <div className="space-y-4">
-            <div className="flex items-center gap-4">
-              <button
-                onClick={handleCreateBatch}
-                disabled={phase !== 'uploaded' || selectedIds.size === 0}
-                className="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
-              >
-                Skapa batch
-              </button>
-              {selectedIds.size === 0 && (
-                <span className="text-sm text-red-600">⚠️ Välj minst en {jobType === 'product_texts' ? 'produkt' : 'UI-element'} för att skapa batch</span>
-              )}
-            </div>
-            {batchAlert && (
-              <p className={`text-sm ${batchAlert.startsWith('✅') ? 'text-green-600' : 'text-red-600'}`}>
-                {batchAlert}
-              </p>
-            )}
-          </div>
-        </div>
 
 
-        {/* D) Optimera & Översätt-sektion */}
-        {((jobType === 'product_texts' && (phase === 'batched' || phase === 'optimizing' || phase === 'translating' || phase === 'readyToExport')) || (jobType === 'ui_strings' && (phase === 'readyToExport' || phase === 'translating'))) && (
-          <div className="bg-white rounded-lg shadow-md p-6 mb-6">
-            <h2 className="text-xl font-semibold mb-4">
-              {jobType === 'product_texts' ? 'D) Optimera & Översätt' : 'D) Översätt'}
-            </h2>
-          <div className="space-y-4">
-            <div className="flex gap-4">
-              {jobType === 'product_texts' ? (
-                <>
-                  <button
-                    onClick={handleOptimize}
-                    disabled={!batchId || phase === 'optimizing'}
-                    className="bg-purple-600 text-white px-4 py-2 rounded-md hover:bg-purple-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
-                  >
-                    Optimera (SV)
-                  </button>
-                  
-                  {/* Översättningsknappar för produkttexter */}
-                  {(() => {
-                    const selectedProducts = Array.from(selectedIds).map(index => parsedProducts[index]).filter(Boolean)
-                    const allHaveOptimizedSv = selectedProducts.length > 0 && selectedProducts.every(p => p.optimized_sv && p.optimized_sv.trim())
-                    const hasSelectedProducts = selectedIds.size > 0
+        {/* Step 3: Optimize & Translate - Only show if currentStep === 3 */}
+        {currentStep === 3 && (
+          <ModernStepCard
+            stepNumber={3}
+            title={jobType === 'product_texts' ? 'Optimera & Översätt' : 'Översätt'}
+            description={jobType === 'product_texts' ? 'Optimerar svenska texter och översätter till norska och danska' : 'Översätter UI-element till norska'}
+            icon={jobType === 'product_texts' ? '✨' : '🌐'}
+            isActive={currentStep >= 3}
+            isCompleted={currentStep > 3}
+          >
+            <div className="space-y-4">
+              <div className="flex gap-4">
+                {jobType === 'product_texts' ? (
+                  <>
+                    <button
+                      onClick={handleOptimize}
+                      disabled={!batchId || phase === 'optimizing'}
+                      className="bg-purple-600 text-white px-4 py-2 rounded-md hover:bg-purple-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
+                    >
+                      Optimera (SV)
+                    </button>
                     
-                    return (
-                      <>
-                        <button
-                          onClick={() => handleTranslateSpecific('no')}
-                          disabled={!batchId || !allHaveOptimizedSv || !hasSelectedProducts || phase === 'translating'}
-                          className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
-                          title={!allHaveOptimizedSv ? "Kräver optimerad svensk text" : ""}
-                        >
-                          Översätt till norska (NO)
-                        </button>
-                        {jobType === 'product_texts' && (
+                    {/* Översättningsknappar för produkttexter */}
+                    {(() => {
+                      const selectedProducts = Array.from(selectedIds).map(index => parsedProducts[index]).filter(Boolean)
+                      const allHaveOptimizedSv = selectedProducts.length > 0 && selectedProducts.every(p => p.optimized_sv && p.optimized_sv.trim())
+                      const hasSelectedProducts = selectedIds.size > 0
+                      
+                      return (
+                        <>
+                          <button
+                            onClick={() => handleTranslateSpecific('no')}
+                            disabled={!batchId || !allHaveOptimizedSv || !hasSelectedProducts || phase === 'translating'}
+                            className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
+                            title={!allHaveOptimizedSv ? "Kräver optimerad svensk text" : ""}
+                          >
+                            Översätt till norska (NO)
+                          </button>
                           <button
                             onClick={() => handleTranslateSpecific('da')}
                             disabled={!batchId || !allHaveOptimizedSv || !hasSelectedProducts || phase === 'translating'}
@@ -1465,272 +1550,280 @@ function BatchOversattningContent() {
                           >
                             Översätt till danska (DK)
                           </button>
-                        )}
-                      </>
-                    )
-                  })()}
-                </>
-              ) : (
-                <>
-                  {/* Översättningsknappar för UI-element - endast norska */}
-                  <button
-                    onClick={() => handleTranslateSpecific('no')}
-                    disabled={!batchId || selectedIds.size === 0 || phase === 'translating'}
-                    className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
-                  >
-                    Översätt till norska (no-NO)
-                  </button>
-                </>
-              )}
-            </div>
-            
-            
-            {phase === 'optimizing' && (
-              <ProgressBar
-                percent={progress.percent}
-                done={progress.done}
-                total={progress.total}
-                counts={progress.counts}
-                startTime={optimizationStartTime}
-                jobType={jobType}
-                phase="optimizing"
-              />
-            )}
-
-            {phase === 'translating' && (
-              <ProgressBar
-                percent={progress.percent}
-                done={progress.done}
-                total={progress.total}
-                counts={progress.counts}
-                startTime={translationStartTime}
-                jobType={jobType}
-                phase="translating"
-              />
-            )}
-            
-            {optimizeAlert && (
-              <p className={`text-sm ${optimizeAlert.startsWith('✅') ? 'text-green-600' : 'text-red-600'}`}>
-                {optimizeAlert}
-              </p>
-            )}
-            
-            {translateAlert && (
-              <p className={`text-sm ${translateAlert.startsWith('✅') ? 'text-green-600' : 'text-red-600'}`}>
-                {translateAlert}
-              </p>
-            )}
-            
-            {/* Visa optimerade produkter eller UI-element */}
-            {phase === 'readyToExport' && (
-              <div className="mt-4 p-4 bg-gray-50 rounded-lg">
-                <h3 className="font-medium mb-4">
-                  {jobType === 'product_texts' 
-                    ? `Optimerade produkter (${selectedIds.size} av ${parsedProducts.length})`
-                    : `UI-element (${selectedIds.size} av ${parsedUIStrings.length})`
-                  }
-                </h3>
-                
-                {/* Urvalsknappar */}
-                <div className="flex flex-wrap gap-2 mb-4">
-                  <button
-                    onClick={handleSelectAll}
-                    className="bg-blue-600 text-white px-3 py-1 rounded-md hover:bg-blue-700 text-sm"
-                  >
-                    Välj alla
-                  </button>
-                  <button
-                    onClick={handleDeselectAll}
-                    className="bg-gray-600 text-white px-3 py-1 rounded-md hover:bg-gray-700 text-sm"
-                  >
-                    Avmarkera alla
-                  </button>
-                </div>
-
-                {/* Produktlista eller UI-element lista */}
-                <div className="max-h-96 overflow-y-auto border border-gray-200 rounded-md">
-                  <table className="w-full text-xs">
-                    <thead className="bg-gray-50 sticky top-0">
-                      <tr>
-                        <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-8">
-                          <input
-                            type="checkbox"
-                            checked={selectedIds.size === (jobType === 'product_texts' ? parsedProducts.length : parsedUIStrings.length) && (jobType === 'product_texts' ? parsedProducts.length : parsedUIStrings.length) > 0}
-                            onChange={selectedIds.size === (jobType === 'product_texts' ? parsedProducts.length : parsedUIStrings.length) ? handleDeselectAll : handleSelectAll}
-                            className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                          />
-                        </th>
-                        {jobType === 'product_texts' ? (
-                          <>
-                            <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">PRODUKTNAMN</th>
-                            <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">BESKRIVNING (SV)</th>
-                            <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">OPTIMERAD TEXT (SV)</th>
-                            <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">OPTIMERAD TEXT (NO)</th>
-                            <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">OPTIMERAD TEXT (DK)</th>
-                            <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-20">STATUS</th>
-                          </>
-                        ) : (
-                          <>
-                            <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">NAMN</th>
-                            {parsedUIStrings.length > 0 && Object.keys(parsedUIStrings[0].values).map(locale => (
-                              <th key={locale} className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{locale}</th>
-                            ))}
-                            <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-20">STATUS</th>
-                          </>
-                        )}
-                      </tr>
-                    </thead>
-                    <tbody className="bg-white divide-y divide-gray-200">
-                      {jobType === 'product_texts' ? (
-                        parsedProducts.slice(0, visibleRows).map((product, index) => (
-                          <tr key={index} className="hover:bg-gray-50">
-                            <td className="px-2 py-1">
-                              <input
-                                type="checkbox"
-                                checked={selectedIds.has(index)}
-                                onChange={() => handleProductToggle(index)}
-                                className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                              />
-                            </td>
-                            <td className="px-2 py-1 text-xs font-bold text-gray-900">
-                              <div className="truncate" title={product.name_sv}>
-                                {product.name_sv}
-                              </div>
-                            </td>
-                            <td className="px-2 py-1 text-xs text-gray-500">
-                              <div 
-                                className="cursor-pointer hover:bg-gray-100 truncate"
-                                onClick={() => handleCellClick(product, 'description_sv')}
-                                title="Klicka för att redigera"
-                              >
-                                {product.description_sv.length > 40 
-                                  ? `${product.description_sv.substring(0, 40)}...` 
-                                  : product.description_sv}
-                              </div>
-                            </td>
-                            <td className="px-2 py-1 text-xs text-gray-500">
-                              {product.optimized_sv ? (
-                                <div 
-                                  className="cursor-pointer hover:bg-gray-100 truncate"
-                                  onClick={() => handleCellClick(product, 'optimized_sv')}
-                                  title="Klicka för att redigera"
-                                >
-                                  <div className="truncate" dangerouslySetInnerHTML={{ 
-                                    __html: formatOptimizedText(product.optimized_sv.substring(0, 40) + (product.optimized_sv.length > 40 ? '...' : ''))
-                                  }} />
-                                </div>
-                              ) : (
-                                <span className="text-gray-400">-</span>
-                              )}
-                            </td>
-                            <td className="px-2 py-1 text-xs text-gray-500">
-                              {product.translated_no ? (
-                                <div 
-                                  className="cursor-pointer hover:bg-gray-100 truncate"
-                                  onClick={() => handleCellClick(product, 'translated_no')}
-                                  title="Klicka för att redigera"
-                                >
-                                  {product.translated_no.length > 40 
-                                    ? `${product.translated_no.substring(0, 40)}...` 
-                                    : product.translated_no}
-                                </div>
-                              ) : (
-                                <span className="text-gray-400">-</span>
-                              )}
-                            </td>
-                            <td className="px-2 py-1 text-xs text-gray-500">
-                              {product.translated_da ? (
-                                <div 
-                                  className="cursor-pointer hover:bg-gray-100 truncate"
-                                  onClick={() => handleCellClick(product, 'translated_da' as any)}
-                                  title="Klicka för att redigera"
-                                >
-                                  {product.translated_da.length > 40 
-                                    ? `${product.translated_da.substring(0, 40)}...` 
-                                    : product.translated_da}
-                                </div>
-                              ) : (
-                                <span className="text-gray-400">-</span>
-                              )}
-                            </td>
-                            <td className="px-2 py-1 text-xs text-gray-700">
-                              {getProductStatus(product)}
-                            </td>
-                          </tr>
-                        ))
-                      ) : (
-                        parsedUIStrings.slice(0, visibleRows).map((uiItem, index) => (
-                          <tr key={index} className="hover:bg-gray-50">
-                            <td className="px-2 py-1">
-                              <input
-                                type="checkbox"
-                                checked={selectedIds.has(index)}
-                                onChange={() => handleProductToggle(index)}
-                                className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                              />
-                            </td>
-                            <td className="px-2 py-1 text-xs font-bold text-gray-900">
-                              <div className="truncate" title={uiItem.name}>
-                                {uiItem.name}
-                              </div>
-                            </td>
-                            {Object.entries(uiItem.values).map(([locale, value]) => (
-                              <td key={locale} className="px-2 py-1 text-xs text-gray-500">
-                                <div className="truncate" title={value as string}>
-                                  {value || '(tom)'}
-                                </div>
-                              </td>
-                            ))}
-                            <td className="px-2 py-1 text-xs text-gray-700">
-                              {uiItem.status || 'pending'}
-                            </td>
-                          </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-                
-                {/* Visa fler-knapp */}
-                {visibleRows < (jobType === 'product_texts' ? parsedProducts.length : parsedUIStrings.length) && (
-                  <div className="text-center mt-4">
+                        </>
+                      )
+                    })()}
+                  </>
+                ) : (
+                  <>
+                    {/* Översättningsknappar för UI-element - endast norska */}
                     <button
-                      onClick={handleShowMore}
-                      className="bg-gray-600 text-white px-4 py-2 rounded-md hover:bg-gray-700 text-sm"
+                      onClick={() => handleTranslateSpecific('no')}
+                      disabled={!batchId || selectedIds.size === 0 || phase === 'translating'}
+                      className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
                     >
-                      Visa fler ({Math.min(200, (jobType === 'product_texts' ? parsedProducts.length : parsedUIStrings.length) - visibleRows)} till)
+                      Översätt till norska (no-NO)
                     </button>
-                    <p className="text-xs text-gray-500 mt-1">
-                      Visar {Math.min(visibleRows, jobType === 'product_texts' ? parsedProducts.length : parsedUIStrings.length)} av {jobType === 'product_texts' ? parsedProducts.length : parsedUIStrings.length} {jobType === 'product_texts' ? 'produkter' : 'UI-element'}
-                    </p>
-                  </div>
+                  </>
                 )}
               </div>
-            )}
-            
-          </div>
-        </div>
+              
+              {phase === 'optimizing' && (
+                <ProgressBar
+                  percent={progress.percent}
+                  done={progress.done}
+                  total={progress.total}
+                  counts={progress.counts}
+                  startTime={optimizationStartTime}
+                  jobType={jobType}
+                  phase="optimizing"
+                />
+              )}
+
+              {phase === 'translating' && (
+                <ProgressBar
+                  percent={progress.percent}
+                  done={progress.done}
+                  total={progress.total}
+                  counts={progress.counts}
+                  startTime={translationStartTime}
+                  jobType={jobType}
+                  phase="translating"
+                />
+              )}
+              
+              {optimizeAlert && (
+                <p className={`text-sm ${optimizeAlert.startsWith('✅') ? 'text-green-600' : 'text-red-600'}`}>
+                  {optimizeAlert}
+                </p>
+              )}
+              
+              {translateAlert && (
+                <p className={`text-sm ${translateAlert.startsWith('✅') ? 'text-green-600' : 'text-red-600'}`}>
+                  {translateAlert}
+                </p>
+              )}
+              
+              {/* Visa optimerade produkter eller UI-element */}
+              {phase === 'readyToExport' && (
+                <div className="mt-4 p-4 bg-gray-50 rounded-lg">
+                  <h3 className="font-medium mb-4">
+                    {jobType === 'product_texts' 
+                      ? `Optimerade produkter (${selectedIds.size} av ${parsedProducts.length})`
+                      : `UI-element (${selectedIds.size} av ${parsedUIStrings.length})`
+                    }
+                  </h3>
+                  
+                  {/* Urvalsknappar */}
+                  <div className="flex flex-wrap gap-2 mb-4">
+                    <button
+                      onClick={handleSelectAll}
+                      className="bg-blue-600 text-white px-3 py-1 rounded-md hover:bg-blue-700 text-sm"
+                    >
+                      Välj alla
+                    </button>
+                    <button
+                      onClick={handleDeselectAll}
+                      className="bg-gray-600 text-white px-3 py-1 rounded-md hover:bg-gray-700 text-sm"
+                    >
+                      Avmarkera alla
+                    </button>
+                  </div>
+                  
+                  {/* Produktlista eller UI-element lista */}
+                  <div className="max-h-96 overflow-y-auto border border-gray-200 rounded-md">
+                    <table className="w-full text-xs">
+                      <thead className="bg-gray-50 sticky top-0">
+                        <tr>
+                          <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-8">
+                            <input
+                              type="checkbox"
+                              checked={selectedIds.size === (jobType === 'product_texts' ? parsedProducts.length : parsedUIStrings.length) && (jobType === 'product_texts' ? parsedProducts.length : parsedUIStrings.length) > 0}
+                              onChange={selectedIds.size === (jobType === 'product_texts' ? parsedProducts.length : parsedUIStrings.length) ? handleDeselectAll : handleSelectAll}
+                              className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                            />
+                          </th>
+                          {jobType === 'product_texts' ? (
+                            <>
+                              <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">PRODUKTNAMN</th>
+                              <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">BESKRIVNING (SV)</th>
+                              <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">OPTIMERAD TEXT (SV)</th>
+                              <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">OPTIMERAD TEXT (NO)</th>
+                              <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">OPTIMERAD TEXT (DK)</th>
+                              <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-20">STATUS</th>
+                            </>
+                          ) : (
+                            <>
+                              <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">NAMN</th>
+                              {parsedUIStrings.length > 0 && Object.keys(parsedUIStrings[0].values).map(locale => (
+                                <th key={locale} className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{locale}</th>
+                              ))}
+                              <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-20">STATUS</th>
+                            </>
+                          )}
+                        </tr>
+                      </thead>
+                      <tbody className="bg-white divide-y divide-gray-200">
+                        {jobType === 'product_texts' ? (
+                          parsedProducts.slice(0, visibleRows).map((product, index) => (
+                            <tr key={index} className="hover:bg-gray-50">
+                              <td className="px-2 py-1">
+                                <input
+                                  type="checkbox"
+                                  checked={selectedIds.has(index)}
+                                  onChange={() => handleProductToggle(index)}
+                                  className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                />
+                              </td>
+                              <td className="px-2 py-1 text-xs font-bold text-gray-900">
+                                <div className="truncate" title={product.name_sv}>
+                                  {product.name_sv}
+                                </div>
+                              </td>
+                              <td className="px-2 py-1 text-xs text-gray-500">
+                                <div 
+                                  className="cursor-pointer hover:bg-gray-100 truncate"
+                                  onClick={() => handleCellClick(product, 'description_sv')}
+                                  title="Klicka för att redigera"
+                                >
+                                  {product.description_sv.length > 40 
+                                    ? `${product.description_sv.substring(0, 40)}...` 
+                                    : product.description_sv}
+                                </div>
+                              </td>
+                              <td className="px-2 py-1 text-xs text-gray-500">
+                                {product.optimized_sv ? (
+                                  <div 
+                                    className="cursor-pointer hover:bg-gray-100 truncate"
+                                    onClick={() => handleCellClick(product, 'optimized_sv')}
+                                    title="Klicka för att redigera"
+                                  >
+                                    <div className="truncate" dangerouslySetInnerHTML={{ 
+                                      __html: formatOptimizedText(product.optimized_sv.substring(0, 40) + (product.optimized_sv.length > 40 ? '...' : ''))
+                                    }} />
+                                  </div>
+                                ) : (
+                                  <span className="text-gray-400">-</span>
+                                )}
+                              </td>
+                              <td className="px-2 py-1 text-xs text-gray-500">
+                                {product.translated_no ? (
+                                  <div 
+                                    className="cursor-pointer hover:bg-gray-100 truncate"
+                                    onClick={() => handleCellClick(product, 'translated_no')}
+                                    title="Klicka för att redigera"
+                                  >
+                                    {product.translated_no.length > 40 
+                                      ? `${product.translated_no.substring(0, 40)}...` 
+                                      : product.translated_no}
+                                  </div>
+                                ) : (
+                                  <span className="text-gray-400">-</span>
+                                )}
+                              </td>
+                              <td className="px-2 py-1 text-xs text-gray-500">
+                                {product.translated_da ? (
+                                  <div 
+                                    className="cursor-pointer hover:bg-gray-100 truncate"
+                                    onClick={() => handleCellClick(product, 'translated_da' as any)}
+                                    title="Klicka för att redigera"
+                                  >
+                                    {product.translated_da.length > 40 
+                                      ? `${product.translated_da.substring(0, 40)}...` 
+                                      : product.translated_da}
+                                  </div>
+                                ) : (
+                                  <span className="text-gray-400">-</span>
+                                )}
+                              </td>
+                              <td className="px-2 py-1 text-xs text-gray-700">
+                                {getProductStatus(product)}
+                              </td>
+                            </tr>
+                          ))
+                        ) : (
+                          parsedUIStrings.slice(0, visibleRows).map((uiItem, index) => (
+                            <tr key={index} className="hover:bg-gray-50">
+                              <td className="px-2 py-1">
+                                <input
+                                  type="checkbox"
+                                  checked={selectedIds.has(index)}
+                                  onChange={() => handleProductToggle(index)}
+                                  className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                />
+                              </td>
+                              <td className="px-2 py-1 text-xs font-bold text-gray-900">
+                                <div className="truncate" title={uiItem.name}>
+                                  {uiItem.name}
+                                </div>
+                              </td>
+                              {Object.entries(uiItem.values).map(([locale, value]) => (
+                                <td key={locale} className="px-2 py-1 text-xs text-gray-500">
+                                  <div className="truncate" title={value as string}>
+                                    {value || '(tom)'}
+                                  </div>
+                                </td>
+                              ))}
+                              <td className="px-2 py-1 text-xs text-gray-700">
+                                {uiItem.status || 'pending'}
+                              </td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                  
+                  {/* Visa fler-knapp */}
+                  {visibleRows < (jobType === 'product_texts' ? parsedProducts.length : parsedUIStrings.length) && (
+                    <div className="text-center mt-4">
+                      <button
+                        onClick={handleShowMore}
+                        className="bg-gray-600 text-white px-4 py-2 rounded-md hover:bg-gray-700 text-sm"
+                      >
+                        Visa fler ({Math.min(200, (jobType === 'product_texts' ? parsedProducts.length : parsedUIStrings.length) - visibleRows)} till)
+                      </button>
+                      <p className="text-xs text-gray-500 mt-1">
+                        Visar {Math.min(visibleRows, jobType === 'product_texts' ? parsedProducts.length : parsedUIStrings.length)} av {jobType === 'product_texts' ? parsedProducts.length : parsedUIStrings.length} {jobType === 'product_texts' ? 'produkter' : 'UI-element'}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </ModernStepCard>
         )}
 
 
-        {/* F) Export-sektion */}
-        <div className="bg-white rounded-lg shadow-md p-6 mb-6">
-          <h2 className="text-xl font-semibold mb-4">F) Exportera Excel</h2>
-          <div className="space-y-4">
-            <button
-              onClick={handleExport}
-              disabled={!batchId}
-              className="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
-            >
-              Exportera Excel
-            </button>
-            {exportAlert && (
-              <p className={`text-sm ${exportAlert.startsWith('✅') ? 'text-green-600' : 'text-red-600'}`}>
-                {exportAlert}
-              </p>
-            )}
-          </div>
-        </div>
+        {/* Step 4: Export - Only show if currentStep === 4 */}
+        {currentStep === 4 && (
+          <ModernStepCard
+            stepNumber={4}
+            title="Exportera"
+            description="Ladda ner den färdiga Excel-filen med alla översättningar"
+            icon="📥"
+            isActive={currentStep >= 4}
+            isCompleted={false}
+            ctaText="Exportera Excel"
+            onCtaClick={handleExport}
+            ctaDisabled={!batchId}
+          >
+            <div className="space-y-4">
+              <ModernSummaryCard
+                title="Batch sammanfattning"
+                items={[
+                  { label: 'Antal rader', value: jobType === 'product_texts' ? parsedProducts.length : parsedUIStrings.length },
+                  { label: 'Språk klara', value: jobType === 'product_texts' ? 'SV, NO, DK' : 'SV, NO' }
+                ]}
+              />
+              {exportAlert && (
+                <p className={`text-sm ${exportAlert.startsWith('✅') ? 'text-green-600' : 'text-red-600'}`}>
+                  {exportAlert}
+                </p>
+              )}
+            </div>
+          </ModernStepCard>
+        )}
 
 
         {/* Regenerate Modal */}
@@ -1826,8 +1919,7 @@ function BatchOversattningContent() {
           onClose={handleDrawerClose}
           onSave={handleSave}
         />
-      </div>
-    </div>
+    </Wizard>
   )
 }
 
