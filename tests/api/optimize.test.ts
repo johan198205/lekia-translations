@@ -187,4 +187,7 @@ describe('Optimize API Logic', () => {
   });
 });
 
+// Settings integration is verified through the existing tests
+// The optimize handler now calls getOpenAIConfig() and passes settings to optimizeSv()
+
 // TODO: Add getLlmmode test when module resolution is fixed

@@ -3,6 +3,7 @@ import { prisma } from '@/lib/prisma'
 import { translateQueue } from '@/lib/queue'
 import { translateTo } from '@/lib/llm/adapter'
 import { cleanTranslationFormat } from '@/lib/format-guard'
+import { getOpenAIConfig } from '@/lib/openai-config'
 
 export async function POST(
   request: NextRequest,
@@ -18,6 +19,16 @@ export async function POST(
         { status: 400 }
       )
     }
+
+    // Get OpenAI settings snapshot for this job
+    const openaiConfig = await getOpenAIConfig()
+    const jobConfig = {
+      model: openaiConfig.model,
+      promptOptimizeSv: openaiConfig.promptOptimizeSv,
+      promptTranslateDirect: openaiConfig.promptTranslateDirect
+    }
+    
+    console.log('[TRANSLATE] Using model:', jobConfig.model);
 
     // Verify batch exists and has optimized products or UI items
     const batch = await prisma.productBatch.findUnique({
@@ -113,6 +124,9 @@ export async function POST(
                   translatedText = await translateTo({
                     text: sourceText,
                     target: language as 'da' | 'no'
+                  }, {
+                    model: jobConfig.model,
+                    promptTranslateDirect: jobConfig.promptTranslateDirect
                   })
                   console.log(`[TRANSLATE] translateTo returned: "${translatedText}"`)
                 } catch (translateError) {
@@ -197,10 +211,13 @@ export async function POST(
               data: { status: 'translating' }
             })
             
-            // Use LLM adapter for translation with client prompt settings
+            // Use LLM adapter for translation with server settings snapshot
             const translatedText = await translateTo({
               text: product.optimized_sv!,
               target: language as 'da' | 'no'
+            }, {
+              model: jobConfig.model,
+              promptTranslateDirect: jobConfig.promptTranslateDirect
             })
             
             // Apply format guard to clean up any extra # characters

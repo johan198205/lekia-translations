@@ -97,6 +97,7 @@ export async function optimizeSv(input: OptimizeInput, options?: {
   temperature?: number;
   model?: string;
   toneDefault?: string;
+  promptOptimizeSv?: string;
 }): Promise<string> {
   const { useLive, mode } = getLlmmode();
   
@@ -106,44 +107,25 @@ export async function optimizeSv(input: OptimizeInput, options?: {
   // Use live OpenAI if available and mode is live
   if (useLive) {
     try {
-      // Get configuration from settings or ENV fallback
+      // Use passed configuration or get from settings as fallback
       const config = await getOpenAIConfig();
+      if (options?.model) config.model = options.model;
+      if (options?.promptOptimizeSv) config.promptOptimizeSv = options.promptOptimizeSv;
+      
       const targetModel = options?.model || config.model;
       
       console.debug(`[LLM] Using model: ${targetModel}`);
       
-      const systemPrompt = options?.system || config.promptOptimizeSv;
-
-      const userPrompt = `Skriv om denna produkt enligt rubrikerna nedan. Kort, tydligt språk. Inkludera viktiga sökord. Bevara varumärken exakt.
+      // Use the user's custom prompt as the user prompt, with product data appended
+      const userPrompt = `${options?.system || config.promptOptimizeSv}
 
 Originalnamn: ${input.nameSv}
 Originalbeskrivning: ${input.descriptionSv}
 Attribut (frivilligt): ${input.attributes ? JSON.stringify(input.attributes) : 'Inga attribut'}
-Ton: ${input.toneHint || 'professionell'}
+Ton: ${input.toneHint || 'professionell'}`;
 
-Rubriker och format (klistra in precis så här i svaret):
-
-Titel (SEO/UX-optimerad)
-{{din titel här}}
-
-Kort introduktion
-{{din korta intro, 1–2 meningar}}
-
-Produktbeskrivning
-{{3–5 korta meningar med vad man gör, upplever, får}}
-
-Höjdpunkter (för UX, CRO och AI Overview)
-{{punkt 1, fakta/nytta}}
-{{punkt 2, fakta/nytta}}
-{{punkt 3, fakta/nytta}}
-{{punkt 4, fakta/nytta}}
-{{punkt 5, fakta/nytta}}
-
-Meta (valfritt)
-Meta Title: {{≤ 60 tecken}}
-Meta Description: {{≤ 155 tecken, inkl CTA}}
-
-Regler: inga emojis, inga garantier/lagtext, inga påhittade features.`;
+      // Use a simple system prompt that doesn't dictate structure
+      const systemPrompt = `Du är en expert på att optimera produkttexter. Följ användarens instruktioner exakt.`;
 
       const response = await retryFetch(`${OPENAI_BASE_URL}/chat/completions`, {
         method: 'POST',
@@ -225,19 +207,28 @@ Meta Description: Upptäck ${input.nameSv} - en pålitlig och användarvänlig p
 /**
  * Translate text to Danish or Norwegian using live OpenAI or stub
  */
-export async function translateTo(input: TranslateInput): Promise<string> {
+export async function translateTo(input: TranslateInput, options?: {
+  model?: string;
+  promptTranslateDirect?: string;
+}): Promise<string> {
   // Use live OpenAI if available and mode is live
   if (HAS_OPENAI && OPENAI_MODE === 'live') {
     try {
       // Get configuration from settings or ENV fallback
       const config = await getOpenAIConfig();
+      if (options?.model) config.model = options.model;
+      if (options?.promptTranslateDirect) config.promptTranslateDirect = options.promptTranslateDirect;
+      
       const targetLang = input.target === 'da' ? 'danska' : 'norska';
       
-      const systemPrompt = config.promptTranslateDirect.replace('{targetLang}', targetLang);
+      // Use the user's custom prompt as the user prompt, with text to translate appended
+      const userPrompt = `${config.promptTranslateDirect.replace('{targetLang}', targetLang)}
 
-      const userPrompt = `Översätt svenska → ${targetLang} verbatim. Behåll exakt struktur/HTML/markdown. Lägg inte till rubriker eller '#'-tecken. Bevara alla taggar, klamrar {{...}}, listor, radbrytningar och ordning. Översätt endast textnoder:
-
+Text att översätta:
 ${input.text}`;
+
+      // Use a simple system prompt that doesn't dictate structure
+      const systemPrompt = `Du är en expert på översättning. Följ användarens instruktioner exakt.`;
 
       const response = await retryFetch(`${OPENAI_BASE_URL}/chat/completions`, {
         method: 'POST',

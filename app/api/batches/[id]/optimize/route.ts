@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { optimizeSv } from '@/lib/llm/adapter'
+import { getOpenAIConfig } from '@/lib/openai-config'
 
 export const runtime = 'nodejs';
 
@@ -16,9 +17,18 @@ export async function POST(
     const clientPromptSettings = body.clientPromptSettings || {}
     const selectedIndices: number[] = body.selectedIndices || []
     
+    // Get OpenAI settings snapshot for this job
+    const openaiConfig = await getOpenAIConfig()
+    const jobConfig = {
+      model: openaiConfig.model,
+      promptOptimizeSv: openaiConfig.promptOptimizeSv,
+      promptTranslateDirect: openaiConfig.promptTranslateDirect
+    }
+    
     console.log('[OPTIMIZE] Received body:', JSON.stringify(body, null, 2));
     console.log('[OPTIMIZE] selectedIndices:', selectedIndices);
     console.log('[OPTIMIZE] selectedIndices length:', selectedIndices.length);
+    console.log('[OPTIMIZE] Using model:', jobConfig.model);
 
     // Verify batch exists
     const batch = await prisma.productBatch.findUnique({
@@ -92,13 +102,17 @@ export async function POST(
           data: { status: 'optimizing' }
         })
         
-        // Use LLM adapter for optimization with client prompt settings
+        // Use LLM adapter for optimization with server settings snapshot
         const optimizedText = await optimizeSv({
           nameSv: product.name_sv,
           descriptionSv: product.description_sv,
           attributes: product.attributes,
           toneHint: product.tone_hint || undefined
-        }, clientPromptSettings.optimize)
+        }, {
+          ...clientPromptSettings.optimize,
+          model: jobConfig.model,
+          system: jobConfig.promptOptimizeSv  // This becomes the user prompt
+        })
         
         console.log(`[OPTIMIZE] Product ${product.name_sv} optimized successfully, length: ${optimizedText.length}`);
         

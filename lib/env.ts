@@ -6,6 +6,11 @@
  */
 
 /**
+ * OpenAI API key
+ */
+export const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+
+/**
  * Whether OpenAI is available (has API key)
  */
 export const HAS_OPENAI = !!process.env.OPENAI_API_KEY;

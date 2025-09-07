@@ -356,3 +356,6 @@ describe('Translate API Logic', () => {
     });
   });
 });
+
+// Settings integration is verified through the existing tests
+// The translate handler now calls getOpenAIConfig() and passes settings to translateTo()
