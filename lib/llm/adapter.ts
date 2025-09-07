@@ -1,4 +1,5 @@
 import { HAS_OPENAI, OPENAI_MODE, OPENAI_BASE_URL, OPENAI_MODEL_OPTIMIZE, OPENAI_MODEL_TRANSLATE } from '@/lib/env';
+import { getOpenAIConfig } from '@/lib/openai-config';
 
 /**
  * Get current LLM mode and availability
@@ -98,15 +99,20 @@ export async function optimizeSv(input: OptimizeInput, options?: {
   toneDefault?: string;
 }): Promise<string> {
   const { useLive, mode } = getLlmmode();
-  const targetModel = useLive ? OPENAI_MODEL_OPTIMIZE : 'stub';
   
-  // Log mode and target model before call
-  console.debug(`[LLM] Starting optimization with mode: ${mode}, target model: ${targetModel}`);
+  // Log mode before call
+  console.debug(`[LLM] Starting optimization with mode: ${mode}`);
   
   // Use live OpenAI if available and mode is live
   if (useLive) {
     try {
-      const systemPrompt = options?.system || `Du är en senior e-handelscopywriter och SEO-strateg. Skriv om svenska produkttexter så att de blir lättläsa, säljande men sakliga, och optimerade för UX, CRO, SEO och AI Overview. Bevara fakta, varumärken och siffror exakt. Inga hallucinationer.`;
+      // Get configuration from settings or ENV fallback
+      const config = await getOpenAIConfig();
+      const targetModel = options?.model || config.model;
+      
+      console.debug(`[LLM] Using model: ${targetModel}`);
+      
+      const systemPrompt = options?.system || config.promptOptimizeSv;
 
       const userPrompt = `Skriv om denna produkt enligt rubrikerna nedan. Kort, tydligt språk. Inkludera viktiga sökord. Bevara varumärken exakt.
 
@@ -142,11 +148,11 @@ Regler: inga emojis, inga garantier/lagtext, inga påhittade features.`;
       const response = await retryFetch(`${OPENAI_BASE_URL}/chat/completions`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+          'Authorization': `Bearer ${config.apiKey}`,
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          model: options?.model || OPENAI_MODEL_OPTIMIZE,
+          model: targetModel,
           messages: [
             { role: 'system', content: systemPrompt },
             { role: 'user', content: userPrompt }
@@ -223,16 +229,11 @@ export async function translateTo(input: TranslateInput): Promise<string> {
   // Use live OpenAI if available and mode is live
   if (HAS_OPENAI && OPENAI_MODE === 'live') {
     try {
+      // Get configuration from settings or ENV fallback
+      const config = await getOpenAIConfig();
       const targetLang = input.target === 'da' ? 'danska' : 'norska';
       
-      const systemPrompt = `Du är en professionell översättare. Översätt svensk text till ${targetLang}.
-
-Regler:
-- Översätt verbatim utan att ändra struktur/HTML/markdown
-- Lägg INTE till #/## rubriknivåer, listtecken eller extra text
-- Behåll {{...}}, radbrytningar, taggar och ordningen exakt
-- Översätt endast textnoder
-- Temperatur: 0 (exakt översättning)`;
+      const systemPrompt = config.promptTranslateDirect.replace('{targetLang}', targetLang);
 
       const userPrompt = `Översätt svenska → ${targetLang} verbatim. Behåll exakt struktur/HTML/markdown. Lägg inte till rubriker eller '#'-tecken. Bevara alla taggar, klamrar {{...}}, listor, radbrytningar och ordning. Översätt endast textnoder:
 
@@ -241,11 +242,11 @@ ${input.text}`;
       const response = await retryFetch(`${OPENAI_BASE_URL}/chat/completions`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+          'Authorization': `Bearer ${config.apiKey}`,
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          model: OPENAI_MODEL_TRANSLATE,
+          model: config.model,
           messages: [
             { role: 'system', content: systemPrompt },
             { role: 'user', content: userPrompt }

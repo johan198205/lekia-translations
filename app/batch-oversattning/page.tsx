@@ -1154,12 +1154,23 @@ function BatchOversattningContent() {
   ]
 
   return (
-    <Wizard 
-      title={jobType === 'product_texts' ? 'Produktöversättning' : 'UI-element Översättning'}
-      currentStep={currentStep}
-      totalSteps={4}
-      steps={steps}
-    >
+    <div style={{ flex: 1, padding: '2rem', background: 'linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%)', minHeight: 'calc(100vh - 80px)' }}>
+      <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
+        <div style={{ background: 'white', borderRadius: '1rem', padding: '2rem', marginBottom: '2rem', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)', border: '1px solid #e5e7eb', textAlign: 'center' }}>
+          <h1 style={{ fontSize: '2rem', fontWeight: '700', color: '#111827', margin: '0 0 0.5rem 0' }}>
+            {jobType === 'product_texts' ? 'Produktöversättning' : 'UI-element Översättning'}
+          </h1>
+          <p style={{ fontSize: '1.125rem', color: '#6b7280', margin: '0' }}>
+            {jobType === 'product_texts' ? 'Optimerar och översätter produkttexter' : 'Översätter UI-element och webbplatstexter'}
+          </p>
+        </div>
+        
+        <Wizard 
+          title=""
+          currentStep={currentStep}
+          totalSteps={4}
+          steps={steps}
+        >
         {/* Step 1: Source Selection - Only show if currentStep === 1 */}
         {currentStep === 1 && (
           <ModernStepCard
@@ -1217,7 +1228,7 @@ function BatchOversattningContent() {
                 name="sourceType"
                 value="existing"
                 checked={sourceType === 'existing'}
-                onChange={setSourceType}
+                onChange={(value) => setSourceType(value as SourceType)}
                 title="Fortsätt på befintlig upload"
                 description="Välj från tidigare uppladdade filer"
                 icon="📁"
@@ -1275,7 +1286,7 @@ function BatchOversattningContent() {
                 name="sourceType"
                 value="new"
                 checked={sourceType === 'new'}
-                onChange={setSourceType}
+                onChange={(value) => setSourceType(value as SourceType)}
                 title="Ladda upp ny fil"
                 description="Importera en ny Excel-fil"
                 icon="📤"
@@ -1329,7 +1340,7 @@ function BatchOversattningContent() {
                   <option value="">-- Välj batch --</option>
                   {availableBatches.map((batch) => (
                     <option key={batch.id} value={batch.id}>
-                      {`Batch ${batch.id.slice(-8)} - ${batch.total_products || batch.total_ui_items || 'N/A'} ${jobType === 'product_texts' ? 'produkter' : 'UI-element'} (${batch.status})`}
+                      {`Batch ${batch.id.slice(-8)} - ${batch.total_products || 'N/A'} ${jobType === 'product_texts' ? 'produkter' : 'UI-element'} (${batch.status})`}
                     </option>
                   ))}
                 </select>
@@ -1919,7 +1930,9 @@ function BatchOversattningContent() {
           onClose={handleDrawerClose}
           onSave={handleSave}
         />
-    </Wizard>
+        </Wizard>
+      </div>
+    </div>
   )
 }
 

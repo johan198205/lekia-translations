@@ -100,3 +100,13 @@ enum ProductStatus {
   completed
   error
 }
+
+model OpenAISettings {
+  id                    String   @id @default(cuid())
+  openaiApiKeyEnc       String?  // Encrypted API key
+  openaiModel           String   @default("gpt-4o-mini")
+  promptOptimizeSv      String   // Swedish optimization prompt
+  promptTranslateDirect String   // Direct translation prompt
+  created_at            DateTime @default(now())
+  updated_at            DateTime @updatedAt
+}

@@ -181,245 +181,391 @@ export default function FardigaBatcharPage() {
   }
 
   return (
-    <div className="fardiga-batchar-container">
-      <div className="page-header">
-        <h1 className="page-title">Färdiga batchar</h1>
-        <p className="page-subtitle">Hantera och granska dina färdiga översättningsbatchar</p>
-      </div>
-      
-      <div className="page-content">
-        {/* Job type selector */}
-        <div className="filter-section">
-          <h2 className="filter-title">Filtrera efter jobbtyp</h2>
-          <div className="job-type-tabs">
-            <button
-              className={`job-type-tab ${selectedJobType === 'product_texts' ? 'active' : ''}`}
-              onClick={() => handleJobTypeChange('product_texts')}
-            >
-              <span className="tab-icon">📦</span>
-              <span className="tab-label">Produkttexter</span>
-            </button>
-            <button
-              className={`job-type-tab ${selectedJobType === 'ui_strings' ? 'active' : ''}`}
-              onClick={() => handleJobTypeChange('ui_strings')}
-            >
-              <span className="tab-icon">🌐</span>
-              <span className="tab-label">UI-element</span>
-            </button>
-          </div>
+    <div style={{ flex: 1, padding: '2rem', background: 'linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%)', minHeight: 'calc(100vh - 80px)' }}>
+      <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
+        <div style={{ background: 'white', borderRadius: '1rem', padding: '2rem', marginBottom: '2rem', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)', border: '1px solid #e5e7eb', textAlign: 'center' }}>
+          <h1 style={{ fontSize: '2rem', fontWeight: '700', color: '#111827', margin: '0 0 0.5rem 0' }}>Färdiga batchar</h1>
+          <p style={{ fontSize: '1.125rem', color: '#6b7280', margin: '0' }}>Hantera och granska dina färdiga översättningsbatchar</p>
         </div>
         
-        {/* Batch selector */}
-        <div className="bg-white rounded-lg shadow-md p-6 mb-6">
-          <div className="flex justify-between items-center mb-4">
-            <h2 className="text-xl font-semibold">Välj batch</h2>
-            {selectedBatch && (
-              <button
-                onClick={() => openDeleteModal('batch', selectedBatch.id, selectedBatch.filename)}
-                className="bg-red-600 text-white px-3 py-1 rounded-md hover:bg-red-700 text-sm"
-                title="Radera batch"
-              >
-                🗑️ Radera batch
-              </button>
-            )}
-          </div>
-          <div className="space-y-4">
-            {loading ? (
-              <p className="text-gray-600">Laddar batchar...</p>
-            ) : batches.length === 0 ? (
-              <p className="text-gray-600">Inga batchar för vald typ hittades.</p>
-            ) : (
-              <select
-                value={selectedBatch?.id || ''}
-                onChange={(e) => handleBatchSelect(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="">-- Välj en batch --</option>
-                {batches.map((batch) => (
-                  <option key={batch.id} value={batch.id}>
-                    {batch.filename} ({batch.total_products} {batch.job_type === 'product_texts' ? 'produkter' : 'UI-element'}) - {new Date(batch.upload_date).toLocaleDateString('sv-SE')}
-                  </option>
-                ))}
-              </select>
-            )}
-            {error && (
-              <p className="text-sm text-red-600">{error}</p>
-            )}
-          </div>
-        </div>
-
-        {/* Products/UI items table */}
-        {selectedBatch && (
-          <div className="bg-white rounded-lg shadow-md p-6">
-            <h2 className="text-xl font-semibold mb-4">
-              {selectedBatch.job_type === 'product_texts' ? 'Produkter' : 'UI-element'} i batch: {selectedBatch.filename}
-            </h2>
-            <div className="overflow-x-auto">
-              {selectedBatch.job_type === 'product_texts' ? (
-                <table className="w-full border-collapse border border-gray-300">
-                  <thead>
-                    <tr className="bg-gray-50">
-                      <th className="border border-gray-300 px-4 py-2 text-left font-medium text-gray-700">
-                        ArticleId
-                      </th>
-                      <th className="border border-gray-300 px-4 py-2 text-left font-medium text-gray-700">
-                        Description_sv
-                      </th>
-                      <th className="border border-gray-300 px-4 py-2 text-left font-medium text-gray-700">
-                        Optimized_Description_sv
-                      </th>
-                      <th className="border border-gray-300 px-4 py-2 text-left font-medium text-gray-700">
-                        Optimized_Description_no
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {selectedBatch.products.length === 0 ? (
-                      <tr>
-                        <td colSpan={4} className="border border-gray-300 px-4 py-8 text-center text-gray-500">
-                          Inga produkter hittades i denna batch.
-                        </td>
-                      </tr>
-                    ) : (
-                      selectedBatch.products.map((product) => (
-                        <tr key={product.id} className="hover:bg-gray-50">
-                          <td className="border border-gray-300 px-4 py-2 text-sm font-mono">
-                            {product.id}
-                          </td>
-                          <td className="border border-gray-300 px-4 py-2 text-sm">
-                            <div 
-                              className="truncate-cell" 
-                              title={product.description_sv}
-                              onClick={() => handleCellClick(product, 'description_sv')}
-                            >
-                              {product.description_sv}
-                            </div>
-                          </td>
-                          <td className="border border-gray-300 px-4 py-2 text-sm">
-                            <div 
-                              className="truncate-cell" 
-                              title={product.optimized_sv || ''}
-                              onClick={() => handleCellClick(product, 'optimized_sv')}
-                            >
-                              {product.optimized_sv || '-'}
-                            </div>
-                          </td>
-                          <td className="border border-gray-300 px-4 py-2 text-sm">
-                            <div 
-                              className="truncate-cell" 
-                              title={product.translated_no || ''}
-                              onClick={() => handleCellClick(product, 'translated_no')}
-                            >
-                              {product.translated_no || '-'}
-                            </div>
-                          </td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              ) : (
-                <table className="w-full border-collapse border border-gray-300">
-                  <thead>
-                    <tr className="bg-gray-50">
-                      <th className="border border-gray-300 px-4 py-2 text-left font-medium text-gray-700">
-                        Namn
-                      </th>
-                      {selectedBatch.ui_items && selectedBatch.ui_items.length > 0 && selectedBatch.ui_items[0].values && Object.keys(JSON.parse(selectedBatch.ui_items[0].values)).map(locale => (
-                        <th key={locale} className="border border-gray-300 px-4 py-2 text-left font-medium text-gray-700">
-                          {locale}
-                        </th>
-                      ))}
-                      <th className="border border-gray-300 px-4 py-2 text-left font-medium text-gray-700">
-                        Status
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {!selectedBatch.ui_items || selectedBatch.ui_items.length === 0 ? (
-                      <tr>
-                        <td colSpan={selectedBatch.ui_items && selectedBatch.ui_items.length > 0 && selectedBatch.ui_items[0].values ? Object.keys(JSON.parse(selectedBatch.ui_items[0].values)).length + 2 : 2} className="border border-gray-300 px-4 py-8 text-center text-gray-500">
-                          Inga UI-element hittades i denna batch.
-                        </td>
-                      </tr>
-                    ) : (
-                      selectedBatch.ui_items.map((item) => {
-                        const values = item.values ? JSON.parse(item.values) : {}
-                        return (
-                          <tr key={item.id} className="hover:bg-gray-50">
-                            <td className="border border-gray-300 px-4 py-2 text-sm font-medium">
-                              <div className="truncate-cell" title={item.name}>
-                                {item.name}
-                              </div>
-                            </td>
-                            {Object.entries(values).map(([locale, value]) => (
-                              <td key={locale} className="border border-gray-300 px-4 py-2 text-sm">
-                                <div className="truncate-cell" title={String(value || '')}>
-                                  {String(value || '(tom)')}
-                                </div>
-                              </td>
-                            ))}
-                            <td className="border border-gray-300 px-4 py-2 text-sm text-gray-700">
-                              {item.status || 'pending'}
-                            </td>
-                          </tr>
-                        )
-                      })
-                    )}
-                  </tbody>
-                </table>
-              )}
-            </div>
-            {((selectedBatch.job_type === 'product_texts' && selectedBatch.products.length > 0) || 
-              (selectedBatch.job_type === 'ui_strings' && selectedBatch.ui_items && selectedBatch.ui_items.length > 0)) && (
-              <p className="text-sm text-gray-500 mt-4">
-                Visar {selectedBatch.job_type === 'product_texts' ? selectedBatch.products.length : selectedBatch.ui_items?.length || 0} {selectedBatch.job_type === 'product_texts' ? 'produkter' : 'UI-element'}
-              </p>
-            )}
-          </div>
-        )}
-
-        {/* Delete Confirmation Modal */}
-        {showDeleteModal && deleteTarget && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
-              <h3 className="text-lg font-semibold mb-4">
-                Bekräfta radering
-              </h3>
-              <p className="text-sm text-gray-600 mb-4">
-                Är du säker på att du vill radera {deleteTarget.type === 'batch' ? 'batchen' : 'uploaden'} "{deleteTarget.name}"?
-                {deleteTarget.type === 'batch' && ' Detta kan inte ångras.'}
-              </p>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+          {/* Job type selector */}
+          <div style={{ background: 'white', borderRadius: '1.5rem', padding: '2rem', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)', border: '2px solid transparent', transition: 'all 0.3s ease', position: 'relative', overflow: 'hidden' }}>
+            <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.05) 0%, rgba(139, 92, 246, 0.05) 100%)', opacity: 0 }}></div>
+            <div style={{ position: 'relative', zIndex: 1 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem', marginBottom: '2rem' }}>
+                <div style={{ position: 'relative', width: '3rem', height: '3rem', borderRadius: '50%', background: 'linear-gradient(135deg, #3b82f6, #1d4ed8)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  <svg style={{ width: '1.5rem', height: '1.5rem', color: 'white' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+                  </svg>
+                  <div style={{ position: 'absolute', top: '-0.5rem', right: '-0.5rem', width: '1.5rem', height: '1.5rem', background: 'white', border: '2px solid #3b82f6', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.75rem', fontWeight: '700', color: '#3b82f6' }}>1</div>
+                </div>
+                <div style={{ flex: 1 }}>
+                  <h2 style={{ fontSize: '1.5rem', fontWeight: '700', color: '#1f2937', margin: '0 0 0.5rem 0', letterSpacing: '-0.01em' }}>Filtrera efter jobbtyp</h2>
+                  <p style={{ color: '#6b7280', lineHeight: '1.6', margin: '0', fontSize: '1rem' }}>Välj typ av batchar att visa</p>
+                </div>
+              </div>
               
-              <div className="flex gap-3">
+              <div style={{ display: 'flex', gap: '1rem' }}>
                 <button
-                  onClick={handleDeleteBatch}
-                  className="bg-red-600 text-white px-4 py-2 rounded-md hover:bg-red-700"
+                  onClick={() => handleJobTypeChange('product_texts')}
+                  style={{
+                    flex: 1,
+                    padding: '1rem',
+                    borderRadius: '0.75rem',
+                    border: '2px solid',
+                    background: selectedJobType === 'product_texts' ? '#3b82f6' : 'white',
+                    borderColor: selectedJobType === 'product_texts' ? '#3b82f6' : '#e5e7eb',
+                    color: selectedJobType === 'product_texts' ? 'white' : '#374151',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.75rem',
+                    fontSize: '1rem',
+                    fontWeight: '600',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s ease'
+                  }}
                 >
-                  Radera
+                  <span style={{ fontSize: '1.25rem' }}>📦</span>
+                  <span>Produkttexter</span>
                 </button>
                 <button
-                  onClick={() => {
-                    setShowDeleteModal(false)
-                    setDeleteTarget(null)
+                  onClick={() => handleJobTypeChange('ui_strings')}
+                  style={{
+                    flex: 1,
+                    padding: '1rem',
+                    borderRadius: '0.75rem',
+                    border: '2px solid',
+                    background: selectedJobType === 'ui_strings' ? '#3b82f6' : 'white',
+                    borderColor: selectedJobType === 'ui_strings' ? '#3b82f6' : '#e5e7eb',
+                    color: selectedJobType === 'ui_strings' ? 'white' : '#374151',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.75rem',
+                    fontSize: '1rem',
+                    fontWeight: '600',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s ease'
                   }}
-                  className="bg-gray-600 text-white px-4 py-2 rounded-md hover:bg-gray-700"
                 >
-                  Avbryt
+                  <span style={{ fontSize: '1.25rem' }}>🌐</span>
+                  <span>UI-element</span>
                 </button>
               </div>
             </div>
           </div>
-        )}
+        
+          {/* Batch selector */}
+          <div style={{ background: 'white', borderRadius: '1.5rem', padding: '2rem', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)', border: '2px solid transparent', transition: 'all 0.3s ease', position: 'relative', overflow: 'hidden' }}>
+            <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.05) 0%, rgba(139, 92, 246, 0.05) 100%)', opacity: 0 }}></div>
+            <div style={{ position: 'relative', zIndex: 1 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem', marginBottom: '2rem' }}>
+                <div style={{ position: 'relative', width: '3rem', height: '3rem', borderRadius: '50%', background: 'linear-gradient(135deg, #3b82f6, #1d4ed8)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  <svg style={{ width: '1.5rem', height: '1.5rem', color: 'white' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                  <div style={{ position: 'absolute', top: '-0.5rem', right: '-0.5rem', width: '1.5rem', height: '1.5rem', background: 'white', border: '2px solid #3b82f6', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.75rem', fontWeight: '700', color: '#3b82f6' }}>2</div>
+                </div>
+                <div style={{ flex: 1 }}>
+                  <h2 style={{ fontSize: '1.5rem', fontWeight: '700', color: '#1f2937', margin: '0 0 0.5rem 0', letterSpacing: '-0.01em' }}>Välj batch</h2>
+                  <p style={{ color: '#6b7280', lineHeight: '1.6', margin: '0', fontSize: '1rem' }}>Välj en batch att granska och hantera</p>
+                </div>
+                {selectedBatch && (
+                  <button
+                    onClick={() => openDeleteModal('batch', selectedBatch.id, selectedBatch.filename)}
+                    style={{
+                      background: '#dc2626',
+                      color: 'white',
+                      padding: '0.5rem 1rem',
+                      borderRadius: '0.5rem',
+                      border: 'none',
+                      fontSize: '0.875rem',
+                      fontWeight: '500',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.5rem',
+                      transition: 'all 0.2s ease'
+                    }}
+                    title="Radera batch"
+                  >
+                    🗑️ Radera batch
+                  </button>
+                )}
+              </div>
+              
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                {loading ? (
+                  <p style={{ color: '#6b7280', textAlign: 'center', padding: '2rem' }}>Laddar batchar...</p>
+                ) : batches.length === 0 ? (
+                  <p style={{ color: '#6b7280', textAlign: 'center', padding: '2rem' }}>Inga batchar för vald typ hittades.</p>
+                ) : (
+                  <select
+                    value={selectedBatch?.id || ''}
+                    onChange={(e) => handleBatchSelect(e.target.value)}
+                    style={{ 
+                      width: '100%', 
+                      padding: '0.75rem', 
+                      border: '1px solid #d1d5db', 
+                      borderRadius: '0.5rem', 
+                      outline: 'none', 
+                      fontSize: '0.875rem', 
+                      backgroundColor: 'white',
+                      minHeight: '2.75rem',
+                      appearance: 'none',
+                      backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
+                      backgroundPosition: 'right 0.5rem center',
+                      backgroundRepeat: 'no-repeat',
+                      backgroundSize: '1.5em 1.5em',
+                      paddingRight: '2.5rem'
+                    }}
+                  >
+                    <option value="">-- Välj en batch --</option>
+                    {batches.map((batch) => (
+                      <option key={batch.id} value={batch.id}>
+                        {batch.filename} ({batch.total_products} {batch.job_type === 'product_texts' ? 'produkter' : 'UI-element'}) - {new Date(batch.upload_date).toLocaleDateString('sv-SE')}
+                      </option>
+                    ))}
+                  </select>
+                )}
+                {error && (
+                  <p style={{ fontSize: '0.875rem', color: '#dc2626', textAlign: 'center' }}>{error}</p>
+                )}
+              </div>
+            </div>
+          </div>
 
-        {/* Product Drawer */}
-        <ProductDrawer
-          product={drawerProduct}
-          field={drawerField}
-          isOpen={isDrawerOpen}
-          onClose={handleDrawerClose}
-          onSave={handleSave}
-        />
+          {/* Products/UI items table */}
+          {selectedBatch && (
+            <div style={{ background: 'white', borderRadius: '1.5rem', padding: '2rem', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)', border: '2px solid transparent', transition: 'all 0.3s ease', position: 'relative', overflow: 'hidden' }}>
+              <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.05) 0%, rgba(139, 92, 246, 0.05) 100%)', opacity: 0 }}></div>
+              <div style={{ position: 'relative', zIndex: 1 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem', marginBottom: '2rem' }}>
+                  <div style={{ position: 'relative', width: '3rem', height: '3rem', borderRadius: '50%', background: 'linear-gradient(135deg, #3b82f6, #1d4ed8)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    <svg style={{ width: '1.5rem', height: '1.5rem', color: 'white' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
+                    </svg>
+                    <div style={{ position: 'absolute', top: '-0.5rem', right: '-0.5rem', width: '1.5rem', height: '1.5rem', background: 'white', border: '2px solid #3b82f6', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.75rem', fontWeight: '700', color: '#3b82f6' }}>3</div>
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <h2 style={{ fontSize: '1.5rem', fontWeight: '700', color: '#1f2937', margin: '0 0 0.5rem 0', letterSpacing: '-0.01em' }}>
+                      {selectedBatch.job_type === 'product_texts' ? 'Produkter' : 'UI-element'} i batch: {selectedBatch.filename}
+                    </h2>
+                    <p style={{ color: '#6b7280', lineHeight: '1.6', margin: '0', fontSize: '1rem' }}>Granska och redigera innehållet i batchen</p>
+                  </div>
+                </div>
+                <div style={{ overflowX: 'auto' }}>
+                  {selectedBatch.job_type === 'product_texts' ? (
+                    <table style={{ width: '100%', borderCollapse: 'collapse', border: '1px solid #d1d5db' }}>
+                      <thead>
+                        <tr style={{ backgroundColor: '#f9fafb' }}>
+                          <th style={{ border: '1px solid #d1d5db', padding: '0.75rem 1rem', textAlign: 'left', fontWeight: '500', color: '#374151' }}>
+                            ArticleId
+                          </th>
+                          <th style={{ border: '1px solid #d1d5db', padding: '0.75rem 1rem', textAlign: 'left', fontWeight: '500', color: '#374151' }}>
+                            Description_sv
+                          </th>
+                          <th style={{ border: '1px solid #d1d5db', padding: '0.75rem 1rem', textAlign: 'left', fontWeight: '500', color: '#374151' }}>
+                            Optimized_Description_sv
+                          </th>
+                          <th style={{ border: '1px solid #d1d5db', padding: '0.75rem 1rem', textAlign: 'left', fontWeight: '500', color: '#374151' }}>
+                            Optimized_Description_no
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {selectedBatch.products.length === 0 ? (
+                          <tr>
+                            <td colSpan={4} style={{ border: '1px solid #d1d5db', padding: '2rem 1rem', textAlign: 'center', color: '#6b7280' }}>
+                              Inga produkter hittades i denna batch.
+                            </td>
+                          </tr>
+                        ) : (
+                          selectedBatch.products.map((product) => (
+                            <tr key={product.id} style={{ transition: 'background-color 0.2s ease' }} onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f9fafb'} onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'white'}>
+                              <td style={{ border: '1px solid #d1d5db', padding: '0.5rem 1rem', fontSize: '0.875rem', fontFamily: 'monospace' }}>
+                                {product.id}
+                              </td>
+                              <td style={{ border: '1px solid #d1d5db', padding: '0.5rem 1rem', fontSize: '0.875rem' }}>
+                                <div 
+                                  style={{ 
+                                    overflow: 'hidden', 
+                                    textOverflow: 'ellipsis', 
+                                    whiteSpace: 'nowrap',
+                                    cursor: 'pointer',
+                                    transition: 'background-color 0.2s ease'
+                                  }}
+                                  title={product.description_sv}
+                                  onClick={() => handleCellClick(product, 'description_sv')}
+                                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f3f4f6'}
+                                  onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                                >
+                                  {product.description_sv}
+                                </div>
+                              </td>
+                              <td style={{ border: '1px solid #d1d5db', padding: '0.5rem 1rem', fontSize: '0.875rem' }}>
+                                <div 
+                                  style={{ 
+                                    overflow: 'hidden', 
+                                    textOverflow: 'ellipsis', 
+                                    whiteSpace: 'nowrap',
+                                    cursor: 'pointer',
+                                    transition: 'background-color 0.2s ease'
+                                  }}
+                                  title={product.optimized_sv || ''}
+                                  onClick={() => handleCellClick(product, 'optimized_sv')}
+                                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f3f4f6'}
+                                  onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                                >
+                                  {product.optimized_sv || '-'}
+                                </div>
+                              </td>
+                              <td style={{ border: '1px solid #d1d5db', padding: '0.5rem 1rem', fontSize: '0.875rem' }}>
+                                <div 
+                                  style={{ 
+                                    overflow: 'hidden', 
+                                    textOverflow: 'ellipsis', 
+                                    whiteSpace: 'nowrap',
+                                    cursor: 'pointer',
+                                    transition: 'background-color 0.2s ease'
+                                  }}
+                                  title={product.translated_no || ''}
+                                  onClick={() => handleCellClick(product, 'translated_no')}
+                                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f3f4f6'}
+                                  onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                                >
+                                  {product.translated_no || '-'}
+                                </div>
+                              </td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  ) : (
+                    <table style={{ width: '100%', borderCollapse: 'collapse', border: '1px solid #d1d5db' }}>
+                      <thead>
+                        <tr style={{ backgroundColor: '#f9fafb' }}>
+                          <th style={{ border: '1px solid #d1d5db', padding: '0.75rem 1rem', textAlign: 'left', fontWeight: '500', color: '#374151' }}>
+                            Namn
+                          </th>
+                          {selectedBatch.ui_items && selectedBatch.ui_items.length > 0 && selectedBatch.ui_items[0].values && Object.keys(JSON.parse(selectedBatch.ui_items[0].values)).map(locale => (
+                            <th key={locale} style={{ border: '1px solid #d1d5db', padding: '0.75rem 1rem', textAlign: 'left', fontWeight: '500', color: '#374151' }}>
+                              {locale}
+                            </th>
+                          ))}
+                          <th style={{ border: '1px solid #d1d5db', padding: '0.75rem 1rem', textAlign: 'left', fontWeight: '500', color: '#374151' }}>
+                            Status
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {!selectedBatch.ui_items || selectedBatch.ui_items.length === 0 ? (
+                          <tr>
+                            <td colSpan={selectedBatch.ui_items && selectedBatch.ui_items.length > 0 && selectedBatch.ui_items[0].values ? Object.keys(JSON.parse(selectedBatch.ui_items[0].values)).length + 2 : 2} style={{ border: '1px solid #d1d5db', padding: '2rem 1rem', textAlign: 'center', color: '#6b7280' }}>
+                              Inga UI-element hittades i denna batch.
+                            </td>
+                          </tr>
+                        ) : (
+                          selectedBatch.ui_items.map((item) => {
+                            const values = item.values ? JSON.parse(item.values) : {}
+                            return (
+                              <tr key={item.id} style={{ transition: 'background-color 0.2s ease' }} onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f9fafb'} onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'white'}>
+                                <td style={{ border: '1px solid #d1d5db', padding: '0.5rem 1rem', fontSize: '0.875rem', fontWeight: '500' }}>
+                                  <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={item.name}>
+                                    {item.name}
+                                  </div>
+                                </td>
+                                {Object.entries(values).map(([locale, value]) => (
+                                  <td key={locale} style={{ border: '1px solid #d1d5db', padding: '0.5rem 1rem', fontSize: '0.875rem' }}>
+                                    <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={String(value || '')}>
+                                      {String(value || '(tom)')}
+                                    </div>
+                                  </td>
+                                ))}
+                                <td style={{ border: '1px solid #d1d5db', padding: '0.5rem 1rem', fontSize: '0.875rem', color: '#374151' }}>
+                                  {item.status || 'pending'}
+                                </td>
+                              </tr>
+                            )
+                          })
+                        )}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+                {((selectedBatch.job_type === 'product_texts' && selectedBatch.products.length > 0) || 
+                  (selectedBatch.job_type === 'ui_strings' && selectedBatch.ui_items && selectedBatch.ui_items.length > 0)) && (
+                  <p style={{ fontSize: '0.875rem', color: '#6b7280', marginTop: '1rem', textAlign: 'center' }}>
+                    Visar {selectedBatch.job_type === 'product_texts' ? selectedBatch.products.length : selectedBatch.ui_items?.length || 0} {selectedBatch.job_type === 'product_texts' ? 'produkter' : 'UI-element'}
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Delete Confirmation Modal */}
+          {showDeleteModal && deleteTarget && (
+            <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0, 0, 0, 0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50 }}>
+              <div style={{ background: 'white', borderRadius: '0.5rem', padding: '1.5rem', maxWidth: '28rem', width: '100%', margin: '0 1rem' }}>
+                <h3 style={{ fontSize: '1.125rem', fontWeight: '600', marginBottom: '1rem', color: '#111827' }}>
+                  Bekräfta radering
+                </h3>
+                <p style={{ fontSize: '0.875rem', color: '#6b7280', marginBottom: '1rem' }}>
+                  Är du säker på att du vill radera {deleteTarget.type === 'batch' ? 'batchen' : 'uploaden'} "{deleteTarget.name}"?
+                  {deleteTarget.type === 'batch' && ' Detta kan inte ångras.'}
+                </p>
+                
+                <div style={{ display: 'flex', gap: '0.75rem' }}>
+                  <button
+                    onClick={handleDeleteBatch}
+                    style={{
+                      background: '#dc2626',
+                      color: 'white',
+                      padding: '0.5rem 1rem',
+                      borderRadius: '0.375rem',
+                      border: 'none',
+                      fontSize: '0.875rem',
+                      fontWeight: '500',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s ease'
+                    }}
+                  >
+                    Radera
+                  </button>
+                  <button
+                    onClick={() => {
+                      setShowDeleteModal(false)
+                      setDeleteTarget(null)
+                    }}
+                    style={{
+                      background: '#6b7280',
+                      color: 'white',
+                      padding: '0.5rem 1rem',
+                      borderRadius: '0.375rem',
+                      border: 'none',
+                      fontSize: '0.875rem',
+                      fontWeight: '500',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s ease'
+                    }}
+                  >
+                    Avbryt
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Product Drawer */}
+          <ProductDrawer
+            product={drawerProduct}
+            field={drawerField}
+            isOpen={isDrawerOpen}
+            onClose={handleDrawerClose}
+            onSave={handleSave}
+          />
+        </div>
       </div>
     </div>
   )
