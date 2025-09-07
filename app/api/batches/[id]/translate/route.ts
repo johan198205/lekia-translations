@@ -125,7 +125,8 @@ export async function POST(
                     text: sourceText,
                     target: language
                   }, {
-                    model: jobConfig.model
+                    model: jobConfig.model,
+                    sourceLang: 'sv'
                   })
                   console.log(`[TRANSLATE] translateTo returned: "${translatedText}"`)
                 } catch (translateError) {
@@ -233,7 +234,8 @@ export async function POST(
               text: product.optimized_sv!,
               target: language
             }, {
-              model: jobConfig.model
+              model: jobConfig.model,
+              sourceLang: 'sv'
             })
             
             // Apply format guard to clean up any extra # characters

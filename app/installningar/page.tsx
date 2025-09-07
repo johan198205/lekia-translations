@@ -11,7 +11,15 @@ interface OpenAISettings {
   exampleProductImportTokens: string | null;
   translationLanguages: string | null;
   originalLanguage: string | null;
+  glossary: string | null;
   updatedAt: string | null;
+}
+
+interface GlossaryEntry {
+  id: string;
+  source: string;
+  comment?: string;
+  targets: Record<string, string>;
 }
 
 export default function InstallningarPage() {
@@ -46,6 +54,13 @@ export default function InstallningarPage() {
   const [detectedLanguages, setDetectedLanguages] = useState<string[]>([]);
   const [suggestedOriginalLanguage, setSuggestedOriginalLanguage] = useState<string>('');
   const [analyzedFileName, setAnalyzedFileName] = useState<string>('');
+  const [glossary, setGlossary] = useState<GlossaryEntry[]>([]);
+  const [newGlossaryEntry, setNewGlossaryEntry] = useState<Partial<GlossaryEntry>>({
+    source: '',
+    comment: '',
+    targets: {}
+  });
+  const [editingGlossaryId, setEditingGlossaryId] = useState<string | null>(null);
 
   useEffect(() => {
     loadSettings();
@@ -116,6 +131,18 @@ export default function InstallningarPage() {
         // Set original language if it exists
         if (data.originalLanguage) {
           setOriginalLanguage(data.originalLanguage);
+        }
+
+        // Parse existing glossary if it exists
+        if (data.glossary) {
+          try {
+            const parsed = JSON.parse(data.glossary);
+            if (Array.isArray(parsed)) {
+              setGlossary(parsed);
+            }
+          } catch (error) {
+            console.warn('Failed to parse existing glossary:', error);
+          }
         }
       }
     } catch (error) {
@@ -248,6 +275,78 @@ export default function InstallningarPage() {
     if (suggestedOriginalLanguage) {
       setOriginalLanguage(suggestedOriginalLanguage);
       setMessage({ type: 'success', text: `Satte originalspråk till ${getLanguageDisplayName(suggestedOriginalLanguage)}` });
+    }
+  };
+
+  const addGlossaryEntry = () => {
+    if (!newGlossaryEntry.source || newGlossaryEntry.source.trim().length === 0) {
+      setMessage({ type: 'error', text: 'Källterm är obligatorisk' });
+      return;
+    }
+
+    if (newGlossaryEntry.source.trim().length > 120) {
+      setMessage({ type: 'error', text: 'Källterm får inte vara längre än 120 tecken' });
+      return;
+    }
+
+    if (/^\d+$/.test(newGlossaryEntry.source.trim())) {
+      setMessage({ type: 'error', text: 'Källterm får inte vara enbart siffror' });
+      return;
+    }
+
+    // Check for duplicates (case-insensitive)
+    const existingEntry = glossary.find(entry => 
+      entry.source.toLowerCase() === newGlossaryEntry.source!.toLowerCase()
+    );
+    if (existingEntry) {
+      setMessage({ type: 'error', text: 'Källterm finns redan (skiftlägesokänslig)' });
+      return;
+    }
+
+    const entry: GlossaryEntry = {
+      id: Date.now().toString(),
+      source: newGlossaryEntry.source.trim(),
+      comment: newGlossaryEntry.comment?.trim() || undefined,
+      targets: { ...newGlossaryEntry.targets }
+    };
+
+    setGlossary(prev => [...prev, entry]);
+    setNewGlossaryEntry({ source: '', comment: '', targets: {} });
+    setMessage({ type: 'success', text: 'Glossary-post tillagd' });
+  };
+
+  const updateGlossaryEntry = (id: string, updates: Partial<GlossaryEntry>) => {
+    setGlossary(prev => prev.map(entry => 
+      entry.id === id ? { ...entry, ...updates } : entry
+    ));
+    setEditingGlossaryId(null);
+    setMessage({ type: 'success', text: 'Glossary-post uppdaterad' });
+  };
+
+  const deleteGlossaryEntry = (id: string) => {
+    setGlossary(prev => prev.filter(entry => entry.id !== id));
+    setMessage({ type: 'success', text: 'Glossary-post borttagen' });
+  };
+
+  const saveGlossary = async () => {
+    try {
+      const response = await fetch('/api/settings/glossary', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ glossary })
+      });
+      
+      if (response.ok) {
+        setMessage({ type: 'success', text: 'Glossary sparad!' });
+      } else {
+        const errorData = await response.json();
+        setMessage({ type: 'error', text: `Kunde inte spara glossary: ${errorData.error || 'Okänt fel'}` });
+      }
+    } catch (error) {
+      console.error('Error saving glossary:', error);
+      setMessage({ type: 'error', text: 'Kunde inte spara glossary' });
     }
   };
 
@@ -1003,6 +1102,180 @@ export default function InstallningarPage() {
                   }}
                 >
                   Spara språkinställningar
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Glossary Section */}
+        <div style={{ background: 'white', borderRadius: '1.5rem', padding: '2rem', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)', border: '2px solid transparent', transition: 'all 0.3s ease', position: 'relative', overflow: 'hidden', marginTop: '2rem' }}>
+          <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, background: 'linear-gradient(135deg, rgba(34, 197, 94, 0.05) 0%, rgba(16, 185, 129, 0.05) 100%)', opacity: 0 }}></div>
+          <div style={{ position: 'relative', zIndex: 1 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem', marginBottom: '2rem' }}>
+              <div style={{ position: 'relative', width: '3rem', height: '3rem', borderRadius: '50%', background: 'linear-gradient(135deg, #22c55e, #10b981)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <svg style={{ width: '1.5rem', height: '1.5rem', color: 'white' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.746 0 3.332.477 4.5 1.253v13C19.832 18.477 18.246 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+                </svg>
+                <div style={{ position: 'absolute', top: '-0.5rem', right: '-0.5rem', width: '1.5rem', height: '1.5rem', background: 'white', border: '2px solid #22c55e', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.75rem', fontWeight: '700', color: '#22c55e' }}>4</div>
+              </div>
+              <div style={{ flex: 1 }}>
+                <h2 style={{ fontSize: '1.5rem', fontWeight: '700', color: '#1f2937', margin: '0 0 0.5rem 0', letterSpacing: '-0.01em' }}>Glossary (Ordlista)</h2>
+                <p style={{ color: '#6b7280', lineHeight: '1.6', margin: '0', fontSize: '1rem' }}>Definiera termer för konsekvent översättning</p>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+              {/* Current Glossary Entries */}
+              {glossary.length > 0 && (
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', color: '#374151', marginBottom: '0.5rem' }}>
+                    Aktiva glossary-poster ({glossary.length} st)
+                  </label>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                    {glossary.map((entry) => (
+                      <div key={entry.id} style={{ padding: '1rem', backgroundColor: '#f9fafb', borderRadius: '0.5rem', border: '1px solid #e5e7eb' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.5rem' }}>
+                          <div style={{ flex: 1 }}>
+                            <div style={{ fontSize: '0.875rem', fontWeight: '600', color: '#1f2937', marginBottom: '0.25rem' }}>
+                              Källterm: <span style={{ color: '#3b82f6' }}>"{entry.source}"</span>
+                            </div>
+                            {entry.comment && (
+                              <div style={{ fontSize: '0.75rem', color: '#6b7280', marginBottom: '0.5rem' }}>
+                                Kommentar: {entry.comment}
+                              </div>
+                            )}
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+                              {Object.entries(entry.targets).map(([lang, term]) => (
+                                <span key={lang} style={{ display: 'inline-block', padding: '0.25rem 0.5rem', backgroundColor: '#dbeafe', color: '#1e40af', borderRadius: '0.25rem', fontSize: '0.75rem', fontWeight: '500' }}>
+                                  {lang}: "{term}"
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                          <button
+                            onClick={() => deleteGlossaryEntry(entry.id)}
+                            style={{
+                              background: '#dc2626',
+                              color: 'white',
+                              border: 'none',
+                              padding: '0.25rem 0.5rem',
+                              borderRadius: '0.25rem',
+                              fontSize: '0.75rem',
+                              fontWeight: '500',
+                              cursor: 'pointer',
+                              marginLeft: '1rem'
+                            }}
+                          >
+                            Ta bort
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Add New Glossary Entry */}
+              <div>
+                <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', color: '#374151', marginBottom: '0.5rem' }}>
+                  Ny glossary-post
+                </label>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', padding: '1rem', backgroundColor: '#f0f9ff', borderRadius: '0.5rem', border: '1px solid #bae6fd' }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '500', color: '#374151', marginBottom: '0.25rem' }}>
+                      Källterm (originalspråk) *
+                    </label>
+                    <input
+                      type="text"
+                      value={newGlossaryEntry.source || ''}
+                      onChange={(e) => setNewGlossaryEntry(prev => ({ ...prev, source: e.target.value }))}
+                      placeholder="t.ex. 'USB-C' eller 'Högpresterande'"
+                      style={{ width: '100%', padding: '0.5rem', border: '1px solid #d1d5db', borderRadius: '0.25rem', outline: 'none', fontSize: '0.875rem' }}
+                    />
+                  </div>
+                  
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '500', color: '#374151', marginBottom: '0.25rem' }}>
+                      Kommentar (valfri)
+                    </label>
+                    <input
+                      type="text"
+                      value={newGlossaryEntry.comment || ''}
+                      onChange={(e) => setNewGlossaryEntry(prev => ({ ...prev, comment: e.target.value }))}
+                      placeholder="Beskrivning eller kontext"
+                      style={{ width: '100%', padding: '0.5rem', border: '1px solid #d1d5db', borderRadius: '0.25rem', outline: 'none', fontSize: '0.875rem' }}
+                    />
+                  </div>
+
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '500', color: '#374151', marginBottom: '0.5rem' }}>
+                      Måltermer (endast för aktiva språk)
+                    </label>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                      {translationLanguages.map((langCode) => (
+                        <div key={langCode} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                          <label style={{ fontSize: '0.75rem', fontWeight: '500', color: '#374151', minWidth: '3rem' }}>
+                            {langCode}:
+                          </label>
+                          <input
+                            type="text"
+                            value={newGlossaryEntry.targets?.[langCode] || ''}
+                            onChange={(e) => setNewGlossaryEntry(prev => ({
+                              ...prev,
+                              targets: { ...prev.targets, [langCode]: e.target.value }
+                            }))}
+                            placeholder={`Målterm för ${getLanguageDisplayName(langCode)}`}
+                            style={{ flex: 1, padding: '0.5rem', border: '1px solid #d1d5db', borderRadius: '0.25rem', outline: 'none', fontSize: '0.875rem' }}
+                          />
+                        </div>
+                      ))}
+                      {translationLanguages.length === 0 && (
+                        <p style={{ fontSize: '0.75rem', color: '#6b7280', fontStyle: 'italic' }}>
+                          Lägg till språk i språkinställningarna först
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={addGlossaryEntry}
+                    disabled={translationLanguages.length === 0}
+                    style={{
+                      background: translationLanguages.length > 0 ? '#22c55e' : '#9ca3af',
+                      color: 'white',
+                      border: 'none',
+                      padding: '0.5rem 1rem',
+                      borderRadius: '0.25rem',
+                      fontWeight: '500',
+                      fontSize: '0.875rem',
+                      cursor: translationLanguages.length > 0 ? 'pointer' : 'not-allowed',
+                      transition: 'all 0.2s ease',
+                      alignSelf: 'flex-start'
+                    }}
+                  >
+                    Lägg till post
+                  </button>
+                </div>
+              </div>
+
+              {/* Save Glossary Button */}
+              <div style={{ display: 'flex', justifyContent: 'center', paddingTop: '1rem', borderTop: '1px solid #e5e7eb' }}>
+                <button
+                  onClick={saveGlossary}
+                  style={{
+                    background: '#22c55e',
+                    color: 'white',
+                    border: 'none',
+                    padding: '0.75rem 1.5rem',
+                    borderRadius: '0.5rem',
+                    fontWeight: '500',
+                    fontSize: '0.875rem',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s ease'
+                  }}
+                >
+                  Spara glossary
                 </button>
               </div>
             </div>

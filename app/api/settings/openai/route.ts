@@ -10,7 +10,8 @@ const updateSettingsSchema = z.object({
   promptTranslateDirect: z.string().optional(),
   exampleProductImportTokens: z.string().optional(),
   translationLanguages: z.string().optional(),
-  originalLanguage: z.string().nullable().optional()
+  originalLanguage: z.string().nullable().optional(),
+  glossary: z.string().optional()
 });
 
 /**
@@ -32,6 +33,7 @@ export async function GET() {
         exampleProductImportTokens: null,
         translationLanguages: null,
         originalLanguage: null,
+        glossary: null,
         updatedAt: null
       });
     }
@@ -44,6 +46,7 @@ export async function GET() {
       exampleProductImportTokens: settings.exampleProductImportTokens,
       translationLanguages: settings.translationLanguages,
       originalLanguage: settings.originalLanguage,
+      glossary: settings.glossary,
       updatedAt: settings.updated_at
     });
   } catch (error) {
@@ -136,6 +139,29 @@ export async function PUT(request: NextRequest) {
       updateData.originalLanguage = validatedData.originalLanguage && validatedData.originalLanguage.trim() ? validatedData.originalLanguage : null;
     }
 
+    if (validatedData.glossary !== undefined) {
+      // Validate that it's valid JSON if provided
+      if (validatedData.glossary && validatedData.glossary.trim()) {
+        try {
+          const parsed = JSON.parse(validatedData.glossary);
+          if (!Array.isArray(parsed)) {
+            return NextResponse.json(
+              { error: 'glossary must be an array' },
+              { status: 400 }
+            );
+          }
+          updateData.glossary = validatedData.glossary;
+        } catch (error) {
+          return NextResponse.json(
+            { error: 'Invalid JSON format for glossary' },
+            { status: 400 }
+          );
+        }
+      } else {
+        updateData.glossary = null;
+      }
+    }
+
     // Validate that translationLanguages doesn't contain originalLanguage
     if (updateData.translationLanguages && updateData.originalLanguage) {
       try {
@@ -166,7 +192,8 @@ export async function PUT(request: NextRequest) {
         promptTranslateDirect: updateData.promptTranslateDirect || '',
         exampleProductImportTokens: updateData.exampleProductImportTokens || null,
         translationLanguages: updateData.translationLanguages || null,
-        originalLanguage: updateData.originalLanguage || null
+        originalLanguage: updateData.originalLanguage || null,
+        glossary: updateData.glossary || null
       };
       
       // Only set API key if it was provided
@@ -187,6 +214,7 @@ export async function PUT(request: NextRequest) {
       exampleProductImportTokens: settings.exampleProductImportTokens,
       translationLanguages: settings.translationLanguages,
       originalLanguage: settings.originalLanguage,
+      glossary: settings.glossary,
       updatedAt: settings.updated_at
     });
   } catch (error) {

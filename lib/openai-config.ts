@@ -11,6 +11,7 @@ export interface OpenAIConfig {
   promptOptimizeSv: string;
   promptTranslateDirect: string;
   exampleProductImportTokens?: string | null;
+  glossary?: string | null;
 }
 
 /**
@@ -38,7 +39,8 @@ export async function getOpenAIConfig(): Promise<OpenAIConfig> {
       model: settings.openaiModel,
       promptOptimizeSv: settings.promptOptimizeSv,
       promptTranslateDirect: settings.promptTranslateDirect,
-      exampleProductImportTokens: settings.exampleProductImportTokens
+      exampleProductImportTokens: settings.exampleProductImportTokens,
+      glossary: settings.glossary
     };
   }
 
@@ -59,6 +61,7 @@ Regler:
 - Behåll {{...}}, radbrytningar, taggar och ordningen exakt
 - Översätt endast textnoder
 - Temperatur: 0 (exakt översättning)`,
-    exampleProductImportTokens: null
+    exampleProductImportTokens: null,
+    glossary: null
   };
 }

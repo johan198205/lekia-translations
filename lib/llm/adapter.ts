@@ -1,6 +1,7 @@
 import { HAS_OPENAI, OPENAI_MODE, OPENAI_BASE_URL, OPENAI_MODEL_OPTIMIZE, OPENAI_MODEL_TRANSLATE } from '@/lib/env';
 import { getOpenAIConfig } from '@/lib/openai-config';
 import { createPromptBuilder, PromptContext } from '@/lib/prompt-builder';
+import { buildGlossaryContext, applyGlossary } from '@/lib/glossary';
 
 /**
  * Get current LLM mode and availability
@@ -261,6 +262,7 @@ Meta Description: Upptäck ${input.nameSv} - en pålitlig och användarvänlig p
  */
 export async function translateTo(input: TranslateInput, options?: {
   model?: string;
+  sourceLang?: string;
 }): Promise<string> {
   // Use live OpenAI if available and mode is live
   if (HAS_OPENAI && OPENAI_MODE === 'live') {
@@ -287,9 +289,32 @@ export async function translateTo(input: TranslateInput, options?: {
       };
       
       const targetLang = languageNames[input.target] || input.target;
+      const sourceLang = options?.sourceLang || 'sv';
+      
+      // Get glossary from settings
+      let glossaryContext = '';
+      let glossaryMappings: Array<{source: string, target: string}> = [];
+      
+      if (config.glossary) {
+        try {
+          const glossary = JSON.parse(config.glossary);
+          glossaryContext = buildGlossaryContext(glossary, sourceLang, input.target);
+          
+          // Build mappings for post-processing
+          const relevantEntries = glossary.filter((entry: any) => 
+            entry.targets && entry.targets[input.target]
+          );
+          glossaryMappings = relevantEntries.map((entry: any) => ({
+            source: entry.source,
+            target: entry.targets[input.target]
+          }));
+        } catch (error) {
+          console.warn('Failed to parse glossary:', error);
+        }
+      }
       
       // Direct translation prompt - preserve structure exactly
-      const systemPrompt = `Du är en expert på översättning. Översätt texten exakt till ${targetLang} medan du bevarar all struktur, rubriker, punktlistor och formatering. Behåll alla siffror, varumärken och tekniska termer oförändrade.`;
+      const systemPrompt = `Du är en expert på översättning. Översätt texten exakt till ${targetLang} medan du bevarar all struktur, rubriker, punktlistor och formatering. Behåll alla siffror, varumärken och tekniska termer oförändrade.${glossaryContext}`;
       
       const userPrompt = `Översätt följande text till ${targetLang}:
 
@@ -313,7 +338,14 @@ ${input.text}`;
       }, RETRY_CONFIG);
 
       const data = await response.json();
-      return data.choices[0].message.content;
+      let translatedText = data.choices[0].message.content;
+      
+      // Apply glossary post-processing
+      if (glossaryMappings.length > 0) {
+        translatedText = applyGlossary(translatedText, glossaryMappings);
+      }
+      
+      return translatedText;
       
     } catch (error) {
       console.error('OpenAI translate error:', error);
