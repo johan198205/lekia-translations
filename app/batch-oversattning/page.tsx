@@ -8,6 +8,7 @@ import Stepper from '../components/Stepper'
 import ModernStepCard from '../components/ModernStepCard'
 import ModernSummaryCard from '../components/ModernSummaryCard'
 import ModernRadioCard from '../components/ModernRadioCard'
+import FlagTranslateButton from '../components/FlagTranslateButton'
 import { getLanguageDisplayName } from '@/lib/languages'
 
 interface Progress {
@@ -1670,21 +1671,15 @@ function BatchOversattningContent() {
                       return (
                         <>
                           {translationLanguages.map((langCode, index) => {
-                            const colors = ['bg-blue-600', 'bg-green-600', 'bg-purple-600', 'bg-orange-600', 'bg-pink-600', 'bg-indigo-600', 'bg-teal-600', 'bg-red-600']
-                            const hoverColors = ['hover:bg-blue-700', 'hover:bg-green-700', 'hover:bg-purple-700', 'hover:bg-orange-700', 'hover:bg-pink-700', 'hover:bg-indigo-700', 'hover:bg-teal-700', 'hover:bg-red-700']
-                            const colorClass = colors[index % colors.length]
-                            const hoverClass = hoverColors[index % hoverColors.length]
-                            
                             return (
-                              <button
+                              <FlagTranslateButton
                                 key={langCode}
+                                langCode={langCode}
                                 onClick={() => handleTranslateSpecific(langCode)}
                                 disabled={!batchId || !allHaveOptimizedSv || !hasSelectedProducts || phase === 'translating'}
-                                className={`${colorClass} text-white px-4 py-2 rounded-md ${hoverClass} disabled:bg-gray-400 disabled:cursor-not-allowed`}
+                                loading={phase === 'translating' && translationLanguage === langCode}
                                 title={!allHaveOptimizedSv ? "Kräver optimerad svensk text" : ""}
-                              >
-                                Översätt till {getLanguageDisplayName(langCode)}
-                              </button>
+                              />
                             )
                           })}
                         </>
@@ -1695,20 +1690,14 @@ function BatchOversattningContent() {
                   <>
                     {/* Översättningsknappar för UI-element */}
                     {translationLanguages.map((langCode, index) => {
-                      const colors = ['bg-blue-600', 'bg-green-600', 'bg-purple-600', 'bg-orange-600', 'bg-pink-600', 'bg-indigo-600', 'bg-teal-600', 'bg-red-600']
-                      const hoverColors = ['hover:bg-blue-700', 'hover:bg-green-700', 'hover:bg-purple-700', 'hover:bg-orange-700', 'hover:bg-pink-700', 'hover:bg-indigo-700', 'hover:bg-teal-700', 'hover:bg-red-700']
-                      const colorClass = colors[index % colors.length]
-                      const hoverClass = hoverColors[index % hoverColors.length]
-                      
                       return (
-                        <button
+                        <FlagTranslateButton
                           key={langCode}
+                          langCode={langCode}
                           onClick={() => handleTranslateSpecific(langCode)}
                           disabled={!batchId || selectedIds.size === 0 || phase === 'translating'}
-                          className={`${colorClass} text-white px-4 py-2 rounded-md ${hoverClass} disabled:bg-gray-400 disabled:cursor-not-allowed`}
-                        >
-                          Översätt till {getLanguageDisplayName(langCode)}
-                        </button>
+                          loading={phase === 'translating' && translationLanguage === langCode}
+                        />
                       )
                     })}
                   </>
