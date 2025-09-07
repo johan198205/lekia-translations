@@ -8,6 +8,7 @@ import Wizard from '../components/Wizard'
 import ModernStepCard from '../components/ModernStepCard'
 import ModernSummaryCard from '../components/ModernSummaryCard'
 import ModernRadioCard from '../components/ModernRadioCard'
+import { getLanguageDisplayName } from '@/lib/languages'
 
 interface Progress {
   percent: number
@@ -32,6 +33,17 @@ interface Product {
   optimized_sv?: string;
   translated_da?: string;
   translated_no?: string;
+  translated_en?: string;
+  translated_de?: string;
+  translated_fr?: string;
+  translated_es?: string;
+  translated_it?: string;
+  translated_pt?: string;
+  translated_nl?: string;
+  translated_pl?: string;
+  translated_ru?: string;
+  translated_fi?: string;
+  translations?: string;
   status?: string;
   batch_id?: string;
 }
@@ -129,9 +141,10 @@ function BatchOversattningContent() {
   const [expandedProducts, setExpandedProducts] = useState<Set<number>>(new Set())
   const [optimizationStartTime, setOptimizationStartTime] = useState<number | null>(null)
   const [translationStartTime, setTranslationStartTime] = useState<number | null>(null)
-  const [translationLanguage, setTranslationLanguage] = useState<'no' | 'da' | null>(null)
+  const [translationLanguage, setTranslationLanguage] = useState<string | null>(null)
+  const [translationLanguages, setTranslationLanguages] = useState<string[]>([])
   const [drawerProduct, setDrawerProduct] = useState<Product | null>(null)
-  const [drawerField, setDrawerField] = useState<'description_sv' | 'optimized_sv' | 'translated_no' | 'translated_da' | null>(null)
+  const [drawerField, setDrawerField] = useState<'description_sv' | 'optimized_sv' | 'translated_no' | 'translated_da' | 'translated_en' | 'translated_de' | 'translated_fr' | 'translated_es' | 'translated_it' | 'translated_pt' | 'translated_nl' | 'translated_pl' | 'translated_ru' | 'translated_fi' | null>(null)
   const [isDrawerOpen, setIsDrawerOpen] = useState(false)
   const [showDeleteModal, setShowDeleteModal] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<{ type: 'upload', id: string, name: string } | null>(null)
@@ -193,6 +206,22 @@ function BatchOversattningContent() {
         if (batchesResponse.ok) {
           const batchesData = await batchesResponse.json()
           setBatches(batchesData)
+        }
+
+        // Load translation languages from settings
+        const settingsResponse = await fetch('/api/settings/openai')
+        if (settingsResponse.ok) {
+          const settingsData = await settingsResponse.json()
+          if (settingsData.translationLanguages) {
+            try {
+              const parsed = JSON.parse(settingsData.translationLanguages)
+              if (Array.isArray(parsed)) {
+                setTranslationLanguages(parsed)
+              }
+            } catch (error) {
+              console.warn('Failed to parse translation languages:', error)
+            }
+          }
         }
       } catch (err) {
         console.error('Failed to load data:', err)
@@ -702,7 +731,7 @@ function BatchOversattningContent() {
     }
   }
 
-  const handleTranslateSpecific = async (language: 'no' | 'da') => {
+  const handleTranslateSpecific = async (language: string) => {
     if (!batchId || selectedIds.size === 0) return
 
     // 1. Show progress UI immediately
@@ -895,29 +924,64 @@ function BatchOversattningContent() {
       return 'pending'
     }
     
-    const hasNo = product.translated_no && product.translated_no.trim()
-    const hasDa = product.translated_da && product.translated_da.trim()
+    // Check translations from new translations field
+    let translatedLanguages: string[] = []
+    if (product.translations) {
+      try {
+        const translations = JSON.parse(product.translations)
+        translatedLanguages = Object.keys(translations).filter(lang => 
+          translations[lang] && translations[lang].trim()
+        )
+      } catch (error) {
+        console.warn('Failed to parse translations for status:', error)
+      }
+    }
     
-    // Status enligt nya regler:
-    // SV optimerad, NO/DK saknas → optimized
-    // NO finns, DK saknas → translated (no)
-    // NO & DK finns → translated (no, dk)
-    if (hasNo && hasDa) {
-      return 'translated (no, dk)'
-    } else if (hasNo) {
-      return 'translated (no)'
-    } else {
+    // Fallback to legacy fields for backward compatibility
+    if (translatedLanguages.length === 0) {
+      const hasNo = product.translated_no && product.translated_no.trim()
+      const hasDa = product.translated_da && product.translated_da.trim()
+      const hasEn = product.translated_en && product.translated_en.trim()
+      const hasDe = product.translated_de && product.translated_de.trim()
+      const hasFr = product.translated_fr && product.translated_fr.trim()
+      const hasEs = product.translated_es && product.translated_es.trim()
+      const hasIt = product.translated_it && product.translated_it.trim()
+      const hasPt = product.translated_pt && product.translated_pt.trim()
+      const hasNl = product.translated_nl && product.translated_nl.trim()
+      const hasPl = product.translated_pl && product.translated_pl.trim()
+      const hasRu = product.translated_ru && product.translated_ru.trim()
+      const hasFi = product.translated_fi && product.translated_fi.trim()
+      
+      if (hasNo) translatedLanguages.push('no')
+      if (hasDa) translatedLanguages.push('da')
+      if (hasEn) translatedLanguages.push('en')
+      if (hasDe) translatedLanguages.push('de')
+      if (hasFr) translatedLanguages.push('fr')
+      if (hasEs) translatedLanguages.push('es')
+      if (hasIt) translatedLanguages.push('it')
+      if (hasPt) translatedLanguages.push('pt')
+      if (hasNl) translatedLanguages.push('nl')
+      if (hasPl) translatedLanguages.push('pl')
+      if (hasRu) translatedLanguages.push('ru')
+      if (hasFi) translatedLanguages.push('fi')
+    }
+    
+    if (translatedLanguages.length === 0) {
       return 'optimized'
+    } else if (translatedLanguages.length === 1) {
+      return `translated (${translatedLanguages[0]})`
+    } else {
+      return `translated (${translatedLanguages.join(', ')})`
     }
   }
 
-  const handleCellClick = (product: Product, field: 'description_sv' | 'optimized_sv' | 'translated_no' | 'translated_da') => {
+  const handleCellClick = (product: Product, field: 'description_sv' | 'optimized_sv' | 'translated_no' | 'translated_da' | 'translated_en' | 'translated_de' | 'translated_fr' | 'translated_es' | 'translated_it' | 'translated_pt' | 'translated_nl' | 'translated_pl' | 'translated_ru' | 'translated_fi') => {
     setDrawerProduct(product)
     setDrawerField(field)
     setIsDrawerOpen(true)
   }
 
-  const handleSave = async (productId: string, updates: { description_sv?: string; description_no?: string; description_da?: string; optimized_sv?: string }) => {
+  const handleSave = async (productId: string, updates: { description_sv?: string; description_no?: string; description_da?: string; description_en?: string; description_de?: string; description_fr?: string; description_es?: string; description_it?: string; description_pt?: string; description_nl?: string; description_pl?: string; description_ru?: string; description_fi?: string; optimized_sv?: string }) => {
     try {
       const response = await fetch(`/api/products/${productId}`, {
         method: 'PATCH',
@@ -943,6 +1007,36 @@ function BatchOversattningContent() {
             if (updates.description_da !== undefined) {
               updatedProduct.translated_da = updates.description_da
             }
+        if (updates.description_en !== undefined) {
+          updatedProduct.translated_en = updates.description_en
+        }
+        if (updates.description_de !== undefined) {
+          updatedProduct.translated_de = updates.description_de
+        }
+        if (updates.description_fr !== undefined) {
+          updatedProduct.translated_fr = updates.description_fr
+        }
+        if (updates.description_es !== undefined) {
+          updatedProduct.translated_es = updates.description_es
+        }
+        if (updates.description_it !== undefined) {
+          updatedProduct.translated_it = updates.description_it
+        }
+        if (updates.description_pt !== undefined) {
+          updatedProduct.translated_pt = updates.description_pt
+        }
+        if (updates.description_nl !== undefined) {
+          updatedProduct.translated_nl = updates.description_nl
+        }
+        if (updates.description_pl !== undefined) {
+          updatedProduct.translated_pl = updates.description_pl
+        }
+        if (updates.description_ru !== undefined) {
+          updatedProduct.translated_ru = updates.description_ru
+        }
+        if (updates.description_fi !== undefined) {
+          updatedProduct.translated_fi = updates.description_fi
+        }
             if (updates.optimized_sv !== undefined) {
               updatedProduct.optimized_sv = updates.optimized_sv
             }
@@ -1104,7 +1198,17 @@ function BatchOversattningContent() {
                   status: updatedProduct.status || product.status,
                   optimized_sv: updatedProduct.optimized_sv || product.optimized_sv,
                   translated_no: updatedProduct.translated_no || product.translated_no,
-                  translated_da: updatedProduct.translated_da || product.translated_da
+                  translated_da: updatedProduct.translated_da || product.translated_da,
+                  translated_en: updatedProduct.translated_en || product.translated_en,
+                  translated_de: updatedProduct.translated_de || product.translated_de,
+                  translated_fr: updatedProduct.translated_fr || product.translated_fr,
+                  translated_es: updatedProduct.translated_es || product.translated_es,
+                  translated_it: updatedProduct.translated_it || product.translated_it,
+                  translated_pt: updatedProduct.translated_pt || product.translated_pt,
+                  translated_nl: updatedProduct.translated_nl || product.translated_nl,
+                  translated_pl: updatedProduct.translated_pl || product.translated_pl,
+                  translated_ru: updatedProduct.translated_ru || product.translated_ru,
+                  translated_fi: updatedProduct.translated_fi || product.translated_fi
                 }
               }
               return product
@@ -1547,36 +1651,48 @@ function BatchOversattningContent() {
                       
                       return (
                         <>
-                          <button
-                            onClick={() => handleTranslateSpecific('no')}
-                            disabled={!batchId || !allHaveOptimizedSv || !hasSelectedProducts || phase === 'translating'}
-                            className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
-                            title={!allHaveOptimizedSv ? "Kräver optimerad svensk text" : ""}
-                          >
-                            Översätt till norska (NO)
-                          </button>
-                          <button
-                            onClick={() => handleTranslateSpecific('da')}
-                            disabled={!batchId || !allHaveOptimizedSv || !hasSelectedProducts || phase === 'translating'}
-                            className="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
-                            title={!allHaveOptimizedSv ? "Kräver optimerad svensk text" : ""}
-                          >
-                            Översätt till danska (DK)
-                          </button>
+                          {translationLanguages.map((langCode, index) => {
+                            const colors = ['bg-blue-600', 'bg-green-600', 'bg-purple-600', 'bg-orange-600', 'bg-pink-600', 'bg-indigo-600', 'bg-teal-600', 'bg-red-600']
+                            const hoverColors = ['hover:bg-blue-700', 'hover:bg-green-700', 'hover:bg-purple-700', 'hover:bg-orange-700', 'hover:bg-pink-700', 'hover:bg-indigo-700', 'hover:bg-teal-700', 'hover:bg-red-700']
+                            const colorClass = colors[index % colors.length]
+                            const hoverClass = hoverColors[index % hoverColors.length]
+                            
+                            return (
+                              <button
+                                key={langCode}
+                                onClick={() => handleTranslateSpecific(langCode)}
+                                disabled={!batchId || !allHaveOptimizedSv || !hasSelectedProducts || phase === 'translating'}
+                                className={`${colorClass} text-white px-4 py-2 rounded-md ${hoverClass} disabled:bg-gray-400 disabled:cursor-not-allowed`}
+                                title={!allHaveOptimizedSv ? "Kräver optimerad svensk text" : ""}
+                              >
+                                Översätt till {getLanguageDisplayName(langCode)}
+                              </button>
+                            )
+                          })}
                         </>
                       )
                     })()}
                   </>
                 ) : (
                   <>
-                    {/* Översättningsknappar för UI-element - endast norska */}
-                    <button
-                      onClick={() => handleTranslateSpecific('no')}
-                      disabled={!batchId || selectedIds.size === 0 || phase === 'translating'}
-                      className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
-                    >
-                      Översätt till norska (no-NO)
-                    </button>
+                    {/* Översättningsknappar för UI-element */}
+                    {translationLanguages.map((langCode, index) => {
+                      const colors = ['bg-blue-600', 'bg-green-600', 'bg-purple-600', 'bg-orange-600', 'bg-pink-600', 'bg-indigo-600', 'bg-teal-600', 'bg-red-600']
+                      const hoverColors = ['hover:bg-blue-700', 'hover:bg-green-700', 'hover:bg-purple-700', 'hover:bg-orange-700', 'hover:bg-pink-700', 'hover:bg-indigo-700', 'hover:bg-teal-700', 'hover:bg-red-700']
+                      const colorClass = colors[index % colors.length]
+                      const hoverClass = hoverColors[index % hoverColors.length]
+                      
+                      return (
+                        <button
+                          key={langCode}
+                          onClick={() => handleTranslateSpecific(langCode)}
+                          disabled={!batchId || selectedIds.size === 0 || phase === 'translating'}
+                          className={`${colorClass} text-white px-4 py-2 rounded-md ${hoverClass} disabled:bg-gray-400 disabled:cursor-not-allowed`}
+                        >
+                          Översätt till {getLanguageDisplayName(langCode)}
+                        </button>
+                      )
+                    })}
                   </>
                 )}
               </div>
@@ -1661,8 +1777,11 @@ function BatchOversattningContent() {
                               <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">PRODUKTNAMN</th>
                               <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">BESKRIVNING (SV)</th>
                               <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">OPTIMERAD TEXT (SV)</th>
-                              <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">OPTIMERAD TEXT (NO)</th>
-                              <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">OPTIMERAD TEXT (DK)</th>
+                              {translationLanguages.map((langCode) => (
+                                <th key={langCode} className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                  OPTIMERAD TEXT ({langCode.toUpperCase()})
+                                </th>
+                              ))}
                               <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-20">STATUS</th>
                             </>
                           ) : (
@@ -1719,36 +1838,27 @@ function BatchOversattningContent() {
                                   <span className="text-gray-400">-</span>
                                 )}
                               </td>
-                              <td className="px-2 py-1 text-xs text-gray-500">
-                                {product.translated_no ? (
-                                  <div 
-                                    className="cursor-pointer hover:bg-gray-100 truncate"
-                                    onClick={() => handleCellClick(product, 'translated_no')}
-                                    title="Klicka för att redigera"
-                                  >
-                                    {product.translated_no.length > 40 
-                                      ? `${product.translated_no.substring(0, 40)}...` 
-                                      : product.translated_no}
-                                  </div>
-                                ) : (
-                                  <span className="text-gray-400">-</span>
-                                )}
-                              </td>
-                              <td className="px-2 py-1 text-xs text-gray-500">
-                                {product.translated_da ? (
-                                  <div 
-                                    className="cursor-pointer hover:bg-gray-100 truncate"
-                                    onClick={() => handleCellClick(product, 'translated_da' as any)}
-                                    title="Klicka för att redigera"
-                                  >
-                                    {product.translated_da.length > 40 
-                                      ? `${product.translated_da.substring(0, 40)}...` 
-                                      : product.translated_da}
-                                  </div>
-                                ) : (
-                                  <span className="text-gray-400">-</span>
-                                )}
-                              </td>
+                              {translationLanguages.map((langCode) => {
+                                const fieldName = `translated_${langCode}` as keyof Product;
+                                const translatedText = product[fieldName] as string;
+                                return (
+                                  <td key={langCode} className="px-2 py-1 text-xs text-gray-500">
+                                    {translatedText ? (
+                                      <div 
+                                        className="cursor-pointer hover:bg-gray-100 truncate"
+                                        onClick={() => handleCellClick(product, fieldName as any)}
+                                        title="Klicka för att redigera"
+                                      >
+                                        {translatedText.length > 40 
+                                          ? `${translatedText.substring(0, 40)}...` 
+                                          : translatedText}
+                                      </div>
+                                    ) : (
+                                      <span className="text-gray-400">-</span>
+                                    )}
+                                  </td>
+                                );
+                              })}
                               <td className="px-2 py-1 text-xs text-gray-700">
                                 {getProductStatus(product)}
                               </td>

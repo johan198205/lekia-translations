@@ -24,6 +24,16 @@ export async function GET(
             optimized_sv: true,
             translated_da: true,
             translated_no: true,
+            translated_en: true,
+            translated_de: true,
+            translated_fr: true,
+            translated_es: true,
+            translated_it: true,
+            translated_pt: true,
+            translated_nl: true,
+            translated_pl: true,
+            translated_ru: true,
+            translated_fi: true,
             status: true,
             error_message: true
           }

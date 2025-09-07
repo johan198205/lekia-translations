@@ -53,10 +53,12 @@ export async function POST(request: NextRequest) {
     // Normalize Excel data to extract tokens
     const result = await normalize(buffer, 'product_texts');
 
-    // Return only the tokens information
+    // Return tokens and detected languages information
     return NextResponse.json({
       success: true,
       tokens: result.meta?.tokens || { tokens: [], systemTokens: [] },
+      detectedLanguages: result.meta?.detectedLanguages || [],
+      suggestedOriginalLanguage: result.meta?.suggestedOriginalLanguage,
       filename: file.name
     });
 

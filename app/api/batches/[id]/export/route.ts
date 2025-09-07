@@ -30,28 +30,80 @@ export async function GET(
       const workbook = new ExcelJS.Workbook()
       const worksheet = workbook.addWorksheet('Produkter')
       
-      // Add headers
-      worksheet.columns = [
+      // Get translation languages from settings
+      let translationLanguages: string[] = []
+      try {
+        const settingsResponse = await fetch(`${process.env.NEXTAUTH_URL || 'http://localhost:3000'}/api/settings/openai`)
+        if (settingsResponse.ok) {
+          const settingsData = await settingsResponse.json()
+          if (settingsData.translationLanguages) {
+            translationLanguages = JSON.parse(settingsData.translationLanguages)
+          }
+        }
+      } catch (error) {
+        console.warn('Failed to load translation languages for export:', error)
+      }
+      
+      // Build dynamic headers
+      const headers = [
         { header: 'Produktnamn', key: 'name', width: 30 },
         { header: 'Beskrivning (SV)', key: 'description', width: 50 },
-        { header: 'Optimerad text (SV)', key: 'optimized', width: 50 },
-        { header: 'Översatt till norska (NO)', key: 'translated_no', width: 50 },
-        { header: 'Översatt till danska (DK)', key: 'translated_da', width: 50 },
+        { header: 'Optimerad text (SV)', key: 'optimized', width: 50 }
+      ]
+      
+      // Add dynamic translation columns
+      translationLanguages.forEach(langCode => {
+        headers.push({
+          header: `Beskrivning (${langCode.toUpperCase()})`,
+          key: `description_${langCode}`,
+          width: 50
+        })
+      })
+      
+      headers.push(
         { header: 'Status', key: 'status', width: 20 },
         { header: 'Felmeddelande', key: 'error', width: 30 }
-      ]
+      )
+      
+      worksheet.columns = headers
 
       // Add data rows
       batch.products.forEach(product => {
-        worksheet.addRow({
+        const rowData: any = {
           name: product.name_sv,
           description: product.description_sv,
           optimized: product.optimized_sv || '',
-          translated_no: product.translated_no || '',
-          translated_da: product.translated_da || '',
           status: product.status,
           error: product.error_message || ''
-        })
+        }
+        
+        // Add translations from the new translations field
+        if (product.translations) {
+          try {
+            const translations = JSON.parse(product.translations)
+            translationLanguages.forEach(langCode => {
+              rowData[`description_${langCode}`] = translations[langCode] || ''
+            })
+          } catch (error) {
+            console.warn('Failed to parse translations for product:', product.id)
+            translationLanguages.forEach(langCode => {
+              rowData[`description_${langCode}`] = ''
+            })
+          }
+        } else {
+          // Fallback to legacy fields for backward compatibility
+          translationLanguages.forEach(langCode => {
+            if (langCode === 'da' && product.translated_da) {
+              rowData[`description_${langCode}`] = product.translated_da
+            } else if (langCode === 'no' && product.translated_no) {
+              rowData[`description_${langCode}`] = product.translated_no
+            } else {
+              rowData[`description_${langCode}`] = ''
+            }
+          })
+        }
+        
+        worksheet.addRow(rowData)
       })
 
       // Generate buffer

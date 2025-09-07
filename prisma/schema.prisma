@@ -49,8 +49,19 @@ model Product {
   tone_hint       String?
   raw_data        String?       // JSON string containing all original Excel columns
   optimized_sv    String?
-  translated_da   String?
-  translated_no   String?
+  translated_da   String?       // Deprecated - use translations field
+  translated_no   String?       // Deprecated - use translations field
+  translated_en   String?       // Deprecated - use translations field
+  translated_de   String?       // Deprecated - use translations field
+  translated_fr   String?       // Deprecated - use translations field
+  translated_es   String?       // Deprecated - use translations field
+  translated_it   String?       // Deprecated - use translations field
+  translated_pt   String?       // Deprecated - use translations field
+  translated_nl   String?       // Deprecated - use translations field
+  translated_pl   String?       // Deprecated - use translations field
+  translated_ru   String?       // Deprecated - use translations field
+  translated_fi   String?       // Deprecated - use translations field
+  translations    String?       // JSON string containing {langCode: translatedText}
   status          ProductStatus
   error_message   String?
   created_at      DateTime      @default(now())
@@ -108,8 +119,10 @@ model OpenAISettings {
   openaiApiKeyEnc              String?  // Encrypted API key
   openaiModel                  String   @default("gpt-4o-mini")
   promptOptimizeSv             String   // Swedish optimization prompt
-  promptTranslateDirect        String   // Direct translation prompt
+  promptTranslateDirect        String   // Direct translation prompt (deprecated)
   exampleProductImportTokens   String?  // JSON string containing extracted tokens from example file
+  translationLanguages         String?  // JSON string containing array of ISO-639-1 language codes
+  originalLanguage             String?  // ISO-639-1 language code for original/source language
   created_at                   DateTime @default(now())
   updated_at                   DateTime @updatedAt
 }

@@ -117,7 +117,17 @@ export async function GET(
                   select: {
                     status: true,
                     translated_da: true,
-                    translated_no: true
+                    translated_no: true,
+                    translated_en: true,
+                    translated_de: true,
+                    translated_fr: true,
+                    translated_es: true,
+                    translated_it: true,
+                    translated_pt: true,
+                    translated_nl: true,
+                    translated_pl: true,
+                    translated_ru: true,
+                    translated_fi: true
                   }
                 },
                 ui_items: {
@@ -169,7 +179,17 @@ export async function GET(
                 // Translation phase: count actual translations completed
                 const productsWithTranslations = itemsToCheck.filter(p => 
                   (p.translated_da && p.translated_da.trim()) || 
-                  (p.translated_no && p.translated_no.trim())
+                  (p.translated_no && p.translated_no.trim()) ||
+                  (p.translated_en && p.translated_en.trim()) ||
+                  (p.translated_de && p.translated_de.trim()) ||
+                  (p.translated_fr && p.translated_fr.trim()) ||
+                  (p.translated_es && p.translated_es.trim()) ||
+                  (p.translated_it && p.translated_it.trim()) ||
+                  (p.translated_pt && p.translated_pt.trim()) ||
+                  (p.translated_nl && p.translated_nl.trim()) ||
+                  (p.translated_pl && p.translated_pl.trim()) ||
+                  (p.translated_ru && p.translated_ru.trim()) ||
+                  (p.translated_fi && p.translated_fi.trim())
                 ).length
                 processedItems = productsWithTranslations
                 percent = total > 0 ? Math.round((productsWithTranslations / total) * 100) : 0

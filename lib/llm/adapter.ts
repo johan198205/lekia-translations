@@ -26,7 +26,7 @@ export interface OptimizeInput {
  */
 export interface TranslateInput {
   text: string;
-  target: 'da' | 'no';
+  target: string; // ISO-639-1 language code
 }
 
 /**
@@ -257,11 +257,10 @@ Meta Description: Upptäck ${input.nameSv} - en pålitlig och användarvänlig p
 }
 
 /**
- * Translate text to Danish or Norwegian using live OpenAI or stub
+ * Translate text to any language using live OpenAI or stub
  */
 export async function translateTo(input: TranslateInput, options?: {
   model?: string;
-  promptTranslateDirect?: string;
 }): Promise<string> {
   // Use live OpenAI if available and mode is live
   if (HAS_OPENAI && OPENAI_MODE === 'live') {
@@ -269,18 +268,32 @@ export async function translateTo(input: TranslateInput, options?: {
       // Get configuration from settings or ENV fallback
       const config = await getOpenAIConfig();
       if (options?.model) config.model = options.model;
-      if (options?.promptTranslateDirect) config.promptTranslateDirect = options.promptTranslateDirect;
       
-      const targetLang = input.target === 'da' ? 'danska' : 'norska';
+      // Get language name from language code
+      const languageNames: Record<string, string> = {
+        'da': 'danska',
+        'no': 'norska',
+        'en': 'engelska',
+        'de': 'tyska',
+        'fr': 'franska',
+        'es': 'spanska',
+        'it': 'italienska',
+        'pt': 'portugisiska',
+        'nl': 'holländska',
+        'pl': 'polska',
+        'ru': 'ryska',
+        'fi': 'finska',
+        'sv': 'svenska'
+      };
       
-      // Use the user's custom prompt as the user prompt, with text to translate appended
-      const userPrompt = `${config.promptTranslateDirect.replace('{targetLang}', targetLang)}
+      const targetLang = languageNames[input.target] || input.target;
+      
+      // Direct translation prompt - preserve structure exactly
+      const systemPrompt = `Du är en expert på översättning. Översätt texten exakt till ${targetLang} medan du bevarar all struktur, rubriker, punktlistor och formatering. Behåll alla siffror, varumärken och tekniska termer oförändrade.`;
+      
+      const userPrompt = `Översätt följande text till ${targetLang}:
 
-Text att översätta:
 ${input.text}`;
-
-      // Use a simple system prompt that doesn't dictate structure
-      const systemPrompt = `Du är en expert på översättning. Följ användarens instruktioner exakt.`;
 
       const response = await retryFetch(`${OPENAI_BASE_URL}/chat/completions`, {
         method: 'POST',
@@ -313,7 +326,7 @@ ${input.text}`;
   await new Promise(resolve => setTimeout(resolve, 500 + Math.random() * 1000));
   
   const langCode = input.target.toUpperCase();
-  const langSuffix = input.target === 'da' ? ' [DA]' : ' [NO]';
+  const langSuffix = ` [${langCode}]`;
   
   // Add meta line at top
   let translated = `<!-- lang:${langCode} -->\n`;

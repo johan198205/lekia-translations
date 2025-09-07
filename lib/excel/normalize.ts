@@ -22,6 +22,8 @@ export interface NormalizeResult {
     skipped: number;
     locales?: string[];
     tokens?: ExtractedTokens;
+    detectedLanguages?: string[];
+    suggestedOriginalLanguage?: string;
   };
 }
 
@@ -80,6 +82,10 @@ async function normalizeProducts(worksheet: ExcelJS.Worksheet): Promise<Normaliz
     console.warn('Failed to extract tokens:', error);
     extractedTokens = { tokens: [], systemTokens: [] };
   }
+
+  // Detect language patterns in headers
+  const detectedLanguages = detectLanguagePatterns(allHeaders);
+  const suggestedOriginalLanguage = suggestOriginalLanguage(allHeaders, detectedLanguages);
   
   const products: Product[] = [];
   let skipped = 0;
@@ -104,6 +110,8 @@ async function normalizeProducts(worksheet: ExcelJS.Worksheet): Promise<Normaliz
       rows: products.length,
       skipped,
       tokens: extractedTokens,
+      detectedLanguages,
+      suggestedOriginalLanguage,
     },
   };
 }
@@ -169,6 +177,57 @@ function getAllHeaders(worksheet: ExcelJS.Worksheet): string[] {
   });
   
   return headers;
+}
+
+function detectLanguagePatterns(headers: string[]): string[] {
+  const detectedLanguages: string[] = [];
+  const languagePattern = /^description_([a-z]{2})$/i;
+  
+  for (const header of headers) {
+    const match = header.match(languagePattern);
+    if (match) {
+      const langCode = match[1].toLowerCase();
+      if (!detectedLanguages.includes(langCode)) {
+        detectedLanguages.push(langCode);
+      }
+    }
+  }
+  
+  return detectedLanguages.sort();
+}
+
+function suggestOriginalLanguage(headers: string[], detectedLanguages: string[]): string | undefined {
+  // Priority order for original language detection
+  const originalLanguagePriority = ['sv', 'se', 'sv-se', 'sv_se'];
+  
+  // First, check for explicit original language patterns
+  for (const priority of originalLanguagePriority) {
+    for (const header of headers) {
+      const lowerHeader = header.toLowerCase();
+      if (lowerHeader.includes(`description_${priority}`) || 
+          lowerHeader.includes(`name_${priority}`) ||
+          lowerHeader.includes(`_${priority}_`)) {
+        return priority.split(/[-_]/)[0]; // Return just the language code part
+      }
+    }
+  }
+  
+  // If no explicit original language found, suggest the first detected language
+  // that's not in the common translation languages
+  const commonTranslationLanguages = ['da', 'no', 'en', 'de', 'fr', 'es'];
+  for (const lang of detectedLanguages) {
+    if (!commonTranslationLanguages.includes(lang)) {
+      return lang;
+    }
+  }
+  
+  // Default to Swedish if found
+  if (detectedLanguages.includes('sv')) {
+    return 'sv';
+  }
+  
+  // Return the first detected language as fallback
+  return detectedLanguages.length > 0 ? detectedLanguages[0] : undefined;
 }
 
 function validateRequiredColumns(headers: Record<string, number>): void {

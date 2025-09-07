@@ -123,10 +123,9 @@ export async function POST(
                 try {
                   translatedText = await translateTo({
                     text: sourceText,
-                    target: language as 'da' | 'no'
+                    target: language
                   }, {
-                    model: jobConfig.model,
-                    promptTranslateDirect: jobConfig.promptTranslateDirect
+                    model: jobConfig.model
                   })
                   console.log(`[TRANSLATE] translateTo returned: "${translatedText}"`)
                 } catch (translateError) {
@@ -135,9 +134,27 @@ export async function POST(
                 }
                 
                 // Update values with translation
+                // Map language codes to locale format
+                const localeMap: Record<string, string> = {
+                  'da': 'da-DK',
+                  'no': 'no-NO',
+                  'en': 'en-US',
+                  'de': 'de-DE',
+                  'fr': 'fr-FR',
+                  'es': 'es-ES',
+                  'it': 'it-IT',
+                  'pt': 'pt-PT',
+                  'nl': 'nl-NL',
+                  'pl': 'pl-PL',
+                  'ru': 'ru-RU',
+                  'fi': 'fi-FI',
+                  'sv': 'sv-SE'
+                }
+                
+                const locale = localeMap[language] || `${language}-${language.toUpperCase()}`
                 const updatedValues = {
                   ...currentValues,
-                  [language === 'no' ? 'no-NO' : 'da-DK']: translatedText
+                  [locale]: translatedText
                 }
                 
                 // Update UI item
@@ -214,10 +231,9 @@ export async function POST(
             // Use LLM adapter for translation with server settings snapshot
             const translatedText = await translateTo({
               text: product.optimized_sv!,
-              target: language as 'da' | 'no'
+              target: language
             }, {
-              model: jobConfig.model,
-              promptTranslateDirect: jobConfig.promptTranslateDirect
+              model: jobConfig.model
             })
             
             // Apply format guard to clean up any extra # characters
@@ -225,24 +241,58 @@ export async function POST(
             
             console.log(`[TRANSLATE] Product ${product.name_sv} translated to ${language} successfully`)
             
-            // Update product with translated text
+            // Update product with translated text using new translations field
             const updateData: any = {}
+            
+            // Parse existing translations or create new object
+            let translations: Record<string, string> = {}
+            if (product.translations) {
+              try {
+                translations = JSON.parse(product.translations)
+              } catch (error) {
+                console.warn('Failed to parse existing translations:', error)
+                translations = {}
+              }
+            }
+            
+            // Add new translation
+            translations[language] = cleanedText
+            updateData.translations = JSON.stringify(translations)
+            
+            // Also update legacy fields for backward compatibility
             if (language === 'da') {
               updateData.translated_da = cleanedText
             } else if (language === 'no') {
               updateData.translated_no = cleanedText
+            } else if (language === 'en') {
+              updateData.translated_en = cleanedText
+            } else if (language === 'de') {
+              updateData.translated_de = cleanedText
+            } else if (language === 'fr') {
+              updateData.translated_fr = cleanedText
+            } else if (language === 'es') {
+              updateData.translated_es = cleanedText
+            } else if (language === 'it') {
+              updateData.translated_it = cleanedText
+            } else if (language === 'pt') {
+              updateData.translated_pt = cleanedText
+            } else if (language === 'nl') {
+              updateData.translated_nl = cleanedText
+            } else if (language === 'pl') {
+              updateData.translated_pl = cleanedText
+            } else if (language === 'ru') {
+              updateData.translated_ru = cleanedText
+            } else if (language === 'fi') {
+              updateData.translated_fi = cleanedText
             }
             
             // Set status based on translation progress
-            const hasDa = language === 'da' ? true : (product.translated_da && product.translated_da.trim())
-            const hasNo = language === 'no' ? true : (product.translated_no && product.translated_no.trim())
+            const translatedLanguages = Object.keys(translations).filter(lang => translations[lang] && translations[lang].trim())
+            const hasTranslations = translatedLanguages.length > 0
             
-            if (hasDa && hasNo) {
-              // Both languages translated - mark as completed
+            if (hasTranslations) {
+              // Has translations - mark as completed
               updateData.status = 'completed'
-            } else if (hasDa || hasNo) {
-              // One language translated - keep as optimized (will be counted as progress)
-              updateData.status = 'optimized'
             } else {
               // No translations yet - should not happen but keep as optimized
               updateData.status = 'optimized'

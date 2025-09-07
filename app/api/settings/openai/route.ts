@@ -8,7 +8,9 @@ const updateSettingsSchema = z.object({
   openaiModel: z.string().optional(),
   promptOptimizeSv: z.string().optional(),
   promptTranslateDirect: z.string().optional(),
-  exampleProductImportTokens: z.string().optional()
+  exampleProductImportTokens: z.string().optional(),
+  translationLanguages: z.string().optional(),
+  originalLanguage: z.string().nullable().optional()
 });
 
 /**
@@ -28,6 +30,8 @@ export async function GET() {
         promptOptimizeSv: '',
         promptTranslateDirect: '',
         exampleProductImportTokens: null,
+        translationLanguages: null,
+        originalLanguage: null,
         updatedAt: null
       });
     }
@@ -38,6 +42,8 @@ export async function GET() {
       promptOptimizeSv: settings.promptOptimizeSv,
       promptTranslateDirect: settings.promptTranslateDirect,
       exampleProductImportTokens: settings.exampleProductImportTokens,
+      translationLanguages: settings.translationLanguages,
+      originalLanguage: settings.originalLanguage,
       updatedAt: settings.updated_at
     });
   } catch (error) {
@@ -103,6 +109,48 @@ export async function PUT(request: NextRequest) {
       }
     }
 
+    if (validatedData.translationLanguages !== undefined) {
+      // Validate that it's valid JSON if provided
+      if (validatedData.translationLanguages && validatedData.translationLanguages.trim()) {
+        try {
+          const parsed = JSON.parse(validatedData.translationLanguages);
+          if (!Array.isArray(parsed)) {
+            return NextResponse.json(
+              { error: 'translationLanguages must be an array' },
+              { status: 400 }
+            );
+          }
+          updateData.translationLanguages = validatedData.translationLanguages;
+        } catch (error) {
+          return NextResponse.json(
+            { error: 'Invalid JSON format for translationLanguages' },
+            { status: 400 }
+          );
+        }
+      } else {
+        updateData.translationLanguages = null;
+      }
+    }
+
+    if (validatedData.originalLanguage !== undefined) {
+      updateData.originalLanguage = validatedData.originalLanguage && validatedData.originalLanguage.trim() ? validatedData.originalLanguage : null;
+    }
+
+    // Validate that translationLanguages doesn't contain originalLanguage
+    if (updateData.translationLanguages && updateData.originalLanguage) {
+      try {
+        const parsedTranslationLanguages = JSON.parse(updateData.translationLanguages);
+        if (Array.isArray(parsedTranslationLanguages) && parsedTranslationLanguages.includes(updateData.originalLanguage)) {
+          return NextResponse.json(
+            { error: 'Translation languages cannot include the original language' },
+            { status: 400 }
+          );
+        }
+      } catch (error) {
+        // If parsing fails, the validation will be caught by the translationLanguages validation above
+      }
+    }
+
     let settings;
     if (existingSettings) {
       // Update existing settings
@@ -116,7 +164,9 @@ export async function PUT(request: NextRequest) {
         openaiModel: updateData.openaiModel || 'gpt-4o-mini',
         promptOptimizeSv: updateData.promptOptimizeSv || '',
         promptTranslateDirect: updateData.promptTranslateDirect || '',
-        exampleProductImportTokens: updateData.exampleProductImportTokens || null
+        exampleProductImportTokens: updateData.exampleProductImportTokens || null,
+        translationLanguages: updateData.translationLanguages || null,
+        originalLanguage: updateData.originalLanguage || null
       };
       
       // Only set API key if it was provided
@@ -135,6 +185,8 @@ export async function PUT(request: NextRequest) {
       promptOptimizeSv: settings.promptOptimizeSv,
       promptTranslateDirect: settings.promptTranslateDirect,
       exampleProductImportTokens: settings.exampleProductImportTokens,
+      translationLanguages: settings.translationLanguages,
+      originalLanguage: settings.originalLanguage,
       updatedAt: settings.updated_at
     });
   } catch (error) {

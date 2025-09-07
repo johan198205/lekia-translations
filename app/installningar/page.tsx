@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { LANGUAGES, getLanguageDisplayName, searchLanguages } from '@/lib/languages';
 
 interface OpenAISettings {
   hasKey: boolean;
@@ -8,6 +9,8 @@ interface OpenAISettings {
   promptOptimizeSv: string;
   promptTranslateDirect: string;
   exampleProductImportTokens: string | null;
+  translationLanguages: string | null;
+  originalLanguage: string | null;
   updatedAt: string | null;
 }
 
@@ -18,14 +21,15 @@ export default function InstallningarPage() {
     promptOptimizeSv: '',
     promptTranslateDirect: '',
     exampleProductImportTokens: null,
+    translationLanguages: null,
+    originalLanguage: null,
     updatedAt: null
   });
   
   const [formData, setFormData] = useState({
     apiKey: '',
     openaiModel: 'gpt-4o-mini',
-    promptOptimizeSv: '',
-    promptTranslateDirect: ''
+    promptOptimizeSv: ''
   });
   
   const [showApiKeyInput, setShowApiKeyInput] = useState(false);
@@ -35,10 +39,37 @@ export default function InstallningarPage() {
   const [exampleFile, setExampleFile] = useState<File | null>(null);
   const [extractedTokens, setExtractedTokens] = useState<string[]>([]);
   const [isUploadingExample, setIsUploadingExample] = useState(false);
+  const [translationLanguages, setTranslationLanguages] = useState<string[]>([]);
+  const [originalLanguage, setOriginalLanguage] = useState<string>('');
+  const [languageSearchQuery, setLanguageSearchQuery] = useState('');
+  const [showLanguageDropdown, setShowLanguageDropdown] = useState(false);
+  const [detectedLanguages, setDetectedLanguages] = useState<string[]>([]);
+  const [suggestedOriginalLanguage, setSuggestedOriginalLanguage] = useState<string>('');
+  const [analyzedFileName, setAnalyzedFileName] = useState<string>('');
 
   useEffect(() => {
     loadSettings();
+    // Load saved filename from localStorage
+    const savedFileName = localStorage.getItem('analyzedFileName');
+    if (savedFileName) {
+      setAnalyzedFileName(savedFileName);
+    }
   }, []);
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (showLanguageDropdown) {
+        const target = event.target as Element;
+        if (!target.closest('[data-language-dropdown]')) {
+          setShowLanguageDropdown(false);
+        }
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showLanguageDropdown]);
 
   const loadSettings = async () => {
     try {
@@ -49,8 +80,7 @@ export default function InstallningarPage() {
         setFormData({
           apiKey: '',
           openaiModel: data.openaiModel,
-          promptOptimizeSv: data.promptOptimizeSv,
-          promptTranslateDirect: data.promptTranslateDirect
+          promptOptimizeSv: data.promptOptimizeSv
         });
         
         // Parse existing example tokens if they exist
@@ -60,10 +90,32 @@ export default function InstallningarPage() {
             if (parsed.tokens && parsed.tokens.length > 0) {
               const tokens = parsed.tokens.map((t: any) => t.token);
               setExtractedTokens(tokens);
+              // Set filename from saved data or fallback
+              const savedFileName = parsed.filename || 'sparad template';
+              setAnalyzedFileName(savedFileName);
+              // Also save to localStorage for consistency
+              localStorage.setItem('analyzedFileName', savedFileName);
             }
           } catch (error) {
             console.warn('Failed to parse existing example tokens:', error);
           }
+        }
+
+        // Parse existing translation languages if they exist
+        if (data.translationLanguages) {
+          try {
+            const parsed = JSON.parse(data.translationLanguages);
+            if (Array.isArray(parsed)) {
+              setTranslationLanguages(parsed);
+            }
+          } catch (error) {
+            console.warn('Failed to parse existing translation languages:', error);
+          }
+        }
+
+        // Set original language if it exists
+        if (data.originalLanguage) {
+          setOriginalLanguage(data.originalLanguage);
         }
       }
     } catch (error) {
@@ -109,9 +161,94 @@ export default function InstallningarPage() {
     return (
       formData.apiKey.trim() !== '' ||
       formData.openaiModel !== settings.openaiModel ||
-      formData.promptOptimizeSv !== settings.promptOptimizeSv ||
-      formData.promptTranslateDirect !== settings.promptTranslateDirect
+      formData.promptOptimizeSv !== settings.promptOptimizeSv
     );
+  };
+
+  const addLanguage = (languageCode: string) => {
+    // Don't allow adding the original language to translation languages
+    if (languageCode === originalLanguage) {
+      setMessage({ type: 'error', text: 'Kan inte lägga till originalspråket i översättningsspråk' });
+      return;
+    }
+    
+    if (!translationLanguages.includes(languageCode)) {
+      const newLanguages = [...translationLanguages, languageCode];
+      setTranslationLanguages(newLanguages);
+      setLanguageSearchQuery('');
+      setShowLanguageDropdown(false);
+      // Clear any existing messages
+      setMessage(null);
+    }
+  };
+
+  const removeLanguage = (languageCode: string) => {
+    setTranslationLanguages(prev => prev.filter(lang => lang !== languageCode));
+    // Clear any existing messages
+    setMessage(null);
+  };
+
+  const handleOriginalLanguageChange = (languageCode: string) => {
+    setOriginalLanguage(languageCode);
+    // Remove the original language from translation languages if it exists
+    setTranslationLanguages(prev => prev.filter(lang => lang !== languageCode));
+    // Clear any existing messages
+    setMessage(null);
+  };
+
+  const saveTranslationLanguages = async () => {
+    try {
+      const response = await fetch('/api/settings/openai', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          translationLanguages: JSON.stringify(translationLanguages),
+          originalLanguage: originalLanguage || null
+        })
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        setSettings(data);
+        setMessage({ type: 'success', text: 'Språkinställningar sparade!' });
+      } else {
+        const errorData = await response.json();
+        console.error('API Error:', errorData);
+        setMessage({ type: 'error', text: `Kunde inte spara språkinställningar: ${errorData.error || 'Okänt fel'}` });
+      }
+    } catch (error) {
+      console.error('Error saving translation languages:', error);
+      setMessage({ type: 'error', text: `Kunde inte spara språkinställningar: ${error instanceof Error ? error.message : 'Okänt fel'}` });
+    }
+  };
+
+  const suggestDetectedLanguages = () => {
+    const newLanguages = [...translationLanguages];
+    let addedCount = 0;
+    
+    for (const langCode of detectedLanguages) {
+      // Don't add the original language to translation languages
+      if (!newLanguages.includes(langCode) && langCode !== originalLanguage) {
+        newLanguages.push(langCode);
+        addedCount++;
+      }
+    }
+    
+    if (addedCount > 0) {
+      setTranslationLanguages(newLanguages);
+      setMessage({ type: 'success', text: `Lade till ${addedCount} språk från exempelfilen (exkluderade originalspråket)` });
+    } else {
+      setMessage({ type: 'success', text: 'Alla upptäckta språk finns redan i listan eller är originalspråket' });
+    }
+  };
+
+  const applySuggestedOriginalLanguage = () => {
+    if (suggestedOriginalLanguage) {
+      setOriginalLanguage(suggestedOriginalLanguage);
+      setMessage({ type: 'success', text: `Satte originalspråk till ${getLanguageDisplayName(suggestedOriginalLanguage)}` });
+    }
   };
 
   const handleExampleFileUpload = async (file: File) => {
@@ -133,7 +270,28 @@ export default function InstallningarPage() {
           const tokens = result.tokens.tokens.map((t: any) => t.token);
           setExtractedTokens(tokens);
           setExampleFile(file);
-          setMessage({ type: 'success', text: `Upptäckte ${tokens.length} tokens från exempelfilen` });
+          setAnalyzedFileName(file.name);
+          // Save filename to localStorage
+          localStorage.setItem('analyzedFileName', file.name);
+          
+          // Handle detected languages
+          if (result.detectedLanguages && result.detectedLanguages.length > 0) {
+            setDetectedLanguages(result.detectedLanguages);
+            
+            // Suggest original language based on detected languages
+            if (result.suggestedOriginalLanguage) {
+              setSuggestedOriginalLanguage(result.suggestedOriginalLanguage);
+              // Automatically set the original language if it's suggested
+              setOriginalLanguage(result.suggestedOriginalLanguage);
+              setMessage({ type: 'success', text: `Upptäckte ${tokens.length} tokens och ${result.detectedLanguages.length} språk från exempelfilen. Satte originalspråk till: ${getLanguageDisplayName(result.suggestedOriginalLanguage)}` });
+            } else {
+              setMessage({ type: 'success', text: `Upptäckte ${tokens.length} tokens och ${result.detectedLanguages.length} språk från exempelfilen` });
+            }
+          } else {
+            setDetectedLanguages([]);
+            setSuggestedOriginalLanguage('');
+            setMessage({ type: 'success', text: `Upptäckte ${tokens.length} tokens från exempelfilen` });
+          }
         } else {
           setMessage({ type: 'error', text: 'Kunde inte extrahera tokens från filen. Kontrollera att filen innehåller kolumnrubriker.' });
         }
@@ -150,11 +308,16 @@ export default function InstallningarPage() {
   };
 
   const saveExampleTokens = async () => {
-    if (extractedTokens.length === 0) return;
+    if (extractedTokens.length === 0) {
+      setMessage({ type: 'error', text: 'Inga tokens att spara' });
+      return;
+    }
     
     try {
-      const tokensData = JSON.stringify({ tokens: extractedTokens.map(token => ({ token, original: token })) });
-      
+      const tokensData = JSON.stringify({ 
+        tokens: extractedTokens.map(token => ({ token, original: token })),
+        filename: analyzedFileName || exampleFile?.name || 'okänd fil'
+      });
       const response = await fetch('/api/settings/openai', {
         method: 'PUT',
         headers: {
@@ -169,12 +332,18 @@ export default function InstallningarPage() {
         const data = await response.json();
         setSettings(data);
         setMessage({ type: 'success', text: 'Exempeltokens sparade!' });
+        // Save filename to localStorage when tokens are saved
+        if (analyzedFileName) {
+          localStorage.setItem('analyzedFileName', analyzedFileName);
+        }
       } else {
-        setMessage({ type: 'error', text: 'Kunde inte spara exempeltokens' });
+        const errorData = await response.json();
+        console.error('API Error:', errorData);
+        setMessage({ type: 'error', text: `Kunde inte spara exempeltokens: ${errorData.error || 'Okänt fel'}` });
       }
     } catch (error) {
       console.error('Error saving example tokens:', error);
-      setMessage({ type: 'error', text: 'Kunde inte spara exempeltokens' });
+      setMessage({ type: 'error', text: `Kunde inte spara exempeltokens: ${error instanceof Error ? error.message : 'Okänt fel'}` });
     }
   };
 
@@ -308,22 +477,6 @@ export default function InstallningarPage() {
                 />
               </div>
 
-              {/* Translation Prompt */}
-              <div>
-                <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', color: '#374151', marginBottom: '0.5rem' }}>
-                  Prompt – Direktöversättning (SV → NO/DK)
-                </label>
-                <textarea
-                  value={formData.promptTranslateDirect}
-                  onChange={(e) => setFormData(prev => ({ ...prev, promptTranslateDirect: e.target.value }))}
-                  rows={4}
-                  style={{ width: '100%', padding: '0.75rem', border: '1px solid #d1d5db', borderRadius: '0.5rem', outline: 'none', fontSize: '0.875rem', resize: 'vertical', minHeight: '6rem' }}
-                  placeholder="Systemprompt för översättning..."
-                />
-                <p style={{ fontSize: '0.75rem', color: '#6b7280', marginTop: '0.25rem' }}>
-                  Använd {`{targetLang}`} som placeholder för målspråket
-                </p>
-              </div>
             </div>
             
             <div style={{ display: 'flex', justifyContent: 'center', paddingTop: '1rem', borderTop: '1px solid #e5e7eb', marginTop: '2rem' }}>
@@ -372,52 +525,105 @@ export default function InstallningarPage() {
                 <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', color: '#374151', marginBottom: '0.5rem' }}>
                   Exempelfil (.xlsx)
                 </label>
-                <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'flex-start' }}>
-                  <input
-                    type="file"
-                    accept=".xlsx"
-                    onChange={(e) => {
-                      const file = e.target.files?.[0];
-                      if (file) {
-                        setExampleFile(file);
-                        setExtractedTokens([]);
-                        setMessage(null);
-                      }
-                    }}
-                    disabled={isUploadingExample}
-                    style={{ 
-                      flex: 1,
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                  <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'flex-start' }}>
+                    <input
+                      type="file"
+                      accept=".xlsx"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) {
+                          setExampleFile(file);
+                          setExtractedTokens([]);
+                          setMessage(null);
+                        }
+                      }}
+                      disabled={isUploadingExample}
+                      style={{ 
+                        flex: 1,
+                        padding: '0.75rem', 
+                        border: '1px solid #d1d5db', 
+                        borderRadius: '0.5rem', 
+                        outline: 'none', 
+                        fontSize: '0.875rem',
+                        backgroundColor: isUploadingExample ? '#f9fafb' : 'white',
+                        cursor: isUploadingExample ? 'not-allowed' : 'pointer'
+                      }}
+                    />
+                    <button
+                      onClick={() => {
+                        if (exampleFile) {
+                          handleExampleFileUpload(exampleFile);
+                        }
+                      }}
+                      disabled={!exampleFile || isUploadingExample}
+                      style={{
+                        padding: '0.75rem 1.5rem',
+                        backgroundColor: exampleFile && !isUploadingExample ? '#22c55e' : '#9ca3af',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '0.5rem',
+                        fontWeight: '500',
+                        fontSize: '0.875rem',
+                        cursor: exampleFile && !isUploadingExample ? 'pointer' : 'not-allowed',
+                        transition: 'all 0.2s ease',
+                        whiteSpace: 'nowrap'
+                      }}
+                    >
+                      {isUploadingExample ? 'Analyserar...' : 'Analysera'}
+                    </button>
+                  </div>
+                  
+                  {/* File status display */}
+                  {(exampleFile || extractedTokens.length > 0) && (
+                    <div style={{ 
                       padding: '0.75rem', 
-                      border: '1px solid #d1d5db', 
+                      backgroundColor: '#f0f9ff', 
                       borderRadius: '0.5rem', 
-                      outline: 'none', 
-                      fontSize: '0.875rem',
-                      backgroundColor: isUploadingExample ? '#f9fafb' : 'white',
-                      cursor: isUploadingExample ? 'not-allowed' : 'pointer'
-                    }}
-                  />
-                  <button
-                    onClick={() => {
-                      if (exampleFile) {
-                        handleExampleFileUpload(exampleFile);
-                      }
-                    }}
-                    disabled={!exampleFile || isUploadingExample}
-                    style={{
-                      padding: '0.75rem 1.5rem',
-                      backgroundColor: exampleFile && !isUploadingExample ? '#22c55e' : '#9ca3af',
-                      color: 'white',
-                      border: 'none',
-                      borderRadius: '0.5rem',
-                      fontWeight: '500',
-                      fontSize: '0.875rem',
-                      cursor: exampleFile && !isUploadingExample ? 'pointer' : 'not-allowed',
-                      transition: 'all 0.2s ease',
-                      whiteSpace: 'nowrap'
-                    }}
-                  >
-                    {isUploadingExample ? 'Analyserar...' : 'Analysera'}
-                  </button>
+                      border: '1px solid #bae6fd',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.5rem'
+                    }}>
+                      <svg style={{ width: '1rem', height: '1rem', color: '#0369a1' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                      </svg>
+                      <span style={{ fontSize: '0.875rem', color: '#0369a1', fontWeight: '500' }}>
+                        {exampleFile ? `Vald fil: ${exampleFile.name}` : `Template analyserad: ${analyzedFileName || 'sparad fil'}`}
+                      </span>
+                      {extractedTokens.length > 0 && (
+                        <span style={{ fontSize: '0.75rem', color: '#059669', backgroundColor: '#d1fae5', padding: '0.25rem 0.5rem', borderRadius: '0.25rem' }}>
+                          ✓ Analyserad
+                        </span>
+                      )}
+                      <button
+                        onClick={() => {
+                          setExampleFile(null);
+                          setExtractedTokens([]);
+                          setDetectedLanguages([]);
+                          setSuggestedOriginalLanguage('');
+                          setAnalyzedFileName('');
+                          setMessage(null);
+                          // Clear saved filename from localStorage
+                          localStorage.removeItem('analyzedFileName');
+                        }}
+                        style={{
+                          marginLeft: 'auto',
+                          background: 'none',
+                          border: 'none',
+                          color: '#dc2626',
+                          cursor: 'pointer',
+                          padding: '0.25rem',
+                          fontSize: '0.75rem',
+                          fontWeight: '500',
+                          textDecoration: 'underline'
+                        }}
+                        title="Rensa vald fil"
+                      >
+                        Rensa
+                      </button>
+                    </div>
+                  )}
                 </div>
                 
                 {/* Template Information */}
@@ -484,6 +690,50 @@ export default function InstallningarPage() {
                 </div>
               )}
 
+              {/* Detected Languages */}
+              {detectedLanguages.length > 0 && (
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', color: '#374151', marginBottom: '0.5rem' }}>
+                    Upptäckta språk från exempelfilen ({detectedLanguages.length} st)
+                  </label>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', padding: '1rem', backgroundColor: '#fef3c7', borderRadius: '0.5rem', border: '1px solid #fbbf24', marginBottom: '1rem' }}>
+                    {detectedLanguages.map((langCode) => (
+                      <span
+                        key={langCode}
+                        style={{
+                          display: 'inline-block',
+                          padding: '0.25rem 0.75rem',
+                          backgroundColor: '#f59e0b',
+                          color: 'white',
+                          borderRadius: '1rem',
+                          fontSize: '0.75rem',
+                          fontWeight: '500',
+                          border: '1px solid #d97706'
+                        }}
+                      >
+                        {getLanguageDisplayName(langCode)}
+                      </span>
+                    ))}
+                  </div>
+                  <button
+                    onClick={suggestDetectedLanguages}
+                    style={{
+                      background: '#f59e0b',
+                      color: 'white',
+                      border: 'none',
+                      padding: '0.5rem 1rem',
+                      borderRadius: '0.5rem',
+                      fontWeight: '500',
+                      fontSize: '0.875rem',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s ease'
+                    }}
+                  >
+                    Lägg till upptäckta språk
+                  </button>
+                </div>
+              )}
+
               {/* Current Settings Tokens */}
               {settings.exampleProductImportTokens && (
                 <div>
@@ -497,6 +747,264 @@ export default function InstallningarPage() {
                   </div>
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+
+        {/* Translation Languages Section */}
+        <div style={{ background: 'white', borderRadius: '1.5rem', padding: '2rem', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)', border: '2px solid transparent', transition: 'all 0.3s ease', position: 'relative', overflow: 'hidden', marginTop: '2rem' }}>
+          <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, background: 'linear-gradient(135deg, rgba(168, 85, 247, 0.05) 0%, rgba(139, 92, 246, 0.05) 100%)', opacity: 0 }}></div>
+          <div style={{ position: 'relative', zIndex: 1 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem', marginBottom: '2rem' }}>
+              <div style={{ position: 'relative', width: '3rem', height: '3rem', borderRadius: '50%', background: 'linear-gradient(135deg, #a855f7, #8b5cf6)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <svg style={{ width: '1.5rem', height: '1.5rem', color: 'white' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5h12M9 3v2m1.048 9.5A18.022 18.022 0 016.412 9m6.088 9h7M11 21l5-10 5 10M12.751 5C11.783 10.77 8.07 15.61 3 18.129" />
+                </svg>
+                <div style={{ position: 'absolute', top: '-0.5rem', right: '-0.5rem', width: '1.5rem', height: '1.5rem', background: 'white', border: '2px solid #a855f7', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.75rem', fontWeight: '700', color: '#a855f7' }}>3</div>
+              </div>
+              <div style={{ flex: 1 }}>
+                <h2 style={{ fontSize: '1.5rem', fontWeight: '700', color: '#1f2937', margin: '0 0 0.5rem 0', letterSpacing: '-0.01em' }}>Språk för översättning</h2>
+                <p style={{ color: '#6b7280', lineHeight: '1.6', margin: '0', fontSize: '1rem' }}>Välj vilka språk som ska vara tillgängliga för översättning</p>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+              {/* Message area for language settings */}
+              {message && (
+                <div style={{ 
+                  marginBottom: '1.5rem', 
+                  padding: '1rem', 
+                  borderRadius: '0.5rem', 
+                  border: '1px solid',
+                  ...(message.type === 'success' 
+                    ? { backgroundColor: '#f0fdf4', color: '#166534', borderColor: '#bbf7d0' }
+                    : { backgroundColor: '#fef2f2', color: '#dc2626', borderColor: '#fecaca' }
+                  )
+                }}>
+                  {message.text}
+                </div>
+              )}
+
+              {/* Original Language */}
+              <div>
+                <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', color: '#374151', marginBottom: '0.5rem' }}>
+                  Originalspråk
+                </label>
+                <select
+                  value={originalLanguage}
+                  onChange={(e) => handleOriginalLanguageChange(e.target.value)}
+                  style={{ 
+                    width: '100%', 
+                    padding: '0.75rem', 
+                    border: '1px solid #d1d5db', 
+                    borderRadius: '0.5rem', 
+                    outline: 'none', 
+                    fontSize: '0.875rem',
+                    backgroundColor: 'white',
+                    minHeight: '2.75rem',
+                    appearance: 'none',
+                    backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
+                    backgroundPosition: 'right 0.5rem center',
+                    backgroundRepeat: 'no-repeat',
+                    backgroundSize: '1.5em 1.5em',
+                    paddingRight: '2.5rem'
+                  }}
+                >
+                  <option value="">Välj originalspråk...</option>
+                  {LANGUAGES.map((lang) => (
+                    <option key={lang.code} value={lang.code}>
+                      {getLanguageDisplayName(lang.code)}
+                    </option>
+                  ))}
+                </select>
+                {originalLanguage && (
+                  <div style={{ marginTop: '0.5rem', padding: '0.75rem', backgroundColor: '#f0f9ff', borderRadius: '0.5rem', border: '1px solid #bae6fd' }}>
+                    <p style={{ fontSize: '0.875rem', color: '#0369a1', margin: '0' }}>
+                      Originalspråk: <strong>{getLanguageDisplayName(originalLanguage)}</strong>
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              {/* Suggested Original Language */}
+              {suggestedOriginalLanguage && suggestedOriginalLanguage !== originalLanguage && (
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', color: '#374151', marginBottom: '0.5rem' }}>
+                    Föreslaget originalspråk från exempelfil
+                  </label>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.75rem', backgroundColor: '#fef3c7', borderRadius: '0.5rem', border: '1px solid #fbbf24' }}>
+                    <span style={{ fontSize: '0.875rem', color: '#92400e', flex: 1 }}>
+                      {getLanguageDisplayName(suggestedOriginalLanguage)}
+                    </span>
+                    <button
+                      onClick={applySuggestedOriginalLanguage}
+                      style={{
+                        background: '#f59e0b',
+                        color: 'white',
+                        border: 'none',
+                        padding: '0.5rem 1rem',
+                        borderRadius: '0.375rem',
+                        fontWeight: '500',
+                        fontSize: '0.75rem',
+                        cursor: 'pointer',
+                        transition: 'all 0.2s ease'
+                      }}
+                    >
+                      Använd
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Current Languages */}
+              <div>
+                <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', color: '#374151', marginBottom: '0.5rem' }}>
+                  Aktiva språk för översättningar ({translationLanguages.length} st)
+                </label>
+                {translationLanguages.length > 0 ? (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', padding: '1rem', backgroundColor: '#f9fafb', borderRadius: '0.5rem', border: '1px solid #e5e7eb' }}>
+                    {translationLanguages.map((langCode) => (
+                      <div
+                        key={langCode}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '0.5rem',
+                          padding: '0.5rem 0.75rem',
+                          backgroundColor: '#dbeafe',
+                          color: '#1e40af',
+                          borderRadius: '1rem',
+                          fontSize: '0.875rem',
+                          fontWeight: '500',
+                          border: '1px solid #bfdbfe'
+                        }}
+                      >
+                        <span>{getLanguageDisplayName(langCode)}</span>
+                        <button
+                          onClick={() => removeLanguage(langCode)}
+                          style={{
+                            background: 'none',
+                            border: 'none',
+                            color: '#dc2626',
+                            cursor: 'pointer',
+                            padding: '0',
+                            fontSize: '0.875rem',
+                            fontWeight: '700',
+                            width: '1.25rem',
+                            height: '1.25rem',
+                            borderRadius: '50%',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center'
+                          }}
+                          title="Ta bort språk"
+                        >
+                          ×
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div style={{ padding: '1rem', backgroundColor: '#f9fafb', borderRadius: '0.5rem', border: '1px solid #e5e7eb', textAlign: 'center' }}>
+                    <p style={{ fontSize: '0.875rem', color: '#6b7280', margin: '0' }}>
+                      Inga språk valda än. Lägg till språk nedan.
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              {/* Add Language */}
+              <div>
+                <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', color: '#374151', marginBottom: '0.5rem' }}>
+                  Lägg till språk
+                </label>
+                <div style={{ position: 'relative' }} data-language-dropdown>
+                  <input
+                    type="text"
+                    value={languageSearchQuery}
+                    onChange={(e) => {
+                      setLanguageSearchQuery(e.target.value);
+                      setShowLanguageDropdown(true);
+                    }}
+                    onFocus={() => setShowLanguageDropdown(true)}
+                    placeholder="Sök språk (t.ex. 'danska' eller 'da')..."
+                    style={{ 
+                      width: '100%', 
+                      padding: '0.75rem', 
+                      border: '1px solid #d1d5db', 
+                      borderRadius: '0.5rem', 
+                      outline: 'none', 
+                      fontSize: '0.875rem',
+                      minHeight: '2.75rem'
+                    }}
+                  />
+                  
+                  {showLanguageDropdown && (
+                    <div style={{
+                      position: 'absolute',
+                      top: '100%',
+                      left: 0,
+                      right: 0,
+                      backgroundColor: 'white',
+                      border: '1px solid #d1d5db',
+                      borderRadius: '0.5rem',
+                      boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+                      zIndex: 50,
+                      maxHeight: '200px',
+                      overflowY: 'auto'
+                    }}>
+                      {searchLanguages(languageSearchQuery)
+                        .filter(lang => !translationLanguages.includes(lang.code) && lang.code !== originalLanguage)
+                        .slice(0, 10)
+                        .map((lang) => (
+                          <button
+                            key={lang.code}
+                            onClick={() => addLanguage(lang.code)}
+                            style={{
+                              width: '100%',
+                              padding: '0.75rem',
+                              textAlign: 'left',
+                              border: 'none',
+                              backgroundColor: 'transparent',
+                              cursor: 'pointer',
+                              fontSize: '0.875rem',
+                              color: '#374151',
+                              borderBottom: '1px solid #f3f4f6'
+                            }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.backgroundColor = '#f9fafb';
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.backgroundColor = 'transparent';
+                            }}
+                          >
+                            {getLanguageDisplayName(lang.code)}
+                          </button>
+                        ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Save Languages Button */}
+              <div style={{ display: 'flex', justifyContent: 'center', paddingTop: '1rem', borderTop: '1px solid #e5e7eb' }}>
+                <button
+                  onClick={saveTranslationLanguages}
+                  style={{
+                    background: '#a855f7',
+                    color: 'white',
+                    border: 'none',
+                    padding: '0.75rem 1.5rem',
+                    borderRadius: '0.5rem',
+                    fontWeight: '500',
+                    fontSize: '0.875rem',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s ease'
+                  }}
+                >
+                  Spara språkinställningar
+                </button>
+              </div>
             </div>
           </div>
         </div>
