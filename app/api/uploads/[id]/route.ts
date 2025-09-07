@@ -10,12 +10,7 @@ export async function DELETE(
 
     // Check if upload exists
     const upload = await prisma.upload.findUnique({
-      where: { id: uploadId },
-      include: {
-        batches: {
-          select: { id: true, status: true }
-        }
-      }
+      where: { id: uploadId }
     })
 
     if (!upload) {
@@ -25,24 +20,28 @@ export async function DELETE(
       )
     }
 
-    // Check if any batches are still processing
-    const processingBatches = upload.batches.filter(batch => 
-      batch.status === 'running' || batch.status === 'pending'
-    )
+    // Delete all related data in correct order to avoid foreign key constraints
+    // First delete all products
+    await prisma.product.deleteMany({
+      where: { upload_id: uploadId }
+    })
 
-    if (processingBatches.length > 0) {
-      return NextResponse.json(
-        { error: 'Cannot delete upload with processing batches' },
-        { status: 400 }
-      )
-    }
+    // Then delete all UI items
+    await prisma.uIItem.deleteMany({
+      where: { upload_id: uploadId }
+    })
 
-    // Delete upload and cascade to related items
+    // Then delete all batches
+    await prisma.productBatch.deleteMany({
+      where: { upload_id: uploadId }
+    })
+
+    // Finally delete the upload
     await prisma.upload.delete({
       where: { id: uploadId }
     })
 
-    return NextResponse.json({ ok: true })
+    return NextResponse.json({ success: true })
   } catch (error) {
     console.error('Delete upload error:', error)
     return NextResponse.json(

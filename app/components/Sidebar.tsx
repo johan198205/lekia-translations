@@ -8,8 +8,8 @@ export default function Sidebar() {
 
   const navItems = [
     { href: '/', label: 'Start', icon: '🏠' },
-    { href: '/batch-oversattning', label: 'Batch-översättning', icon: '⚙️' },
-    { href: '/fardiga-batchar', label: 'Färdiga batchar', icon: '📋' },
+    { href: '/batch-oversattning', label: 'Optimering & översättning', icon: '⚙️' },
+    { href: '/fardiga-batchar', label: 'Färdiga uploads', icon: '📋' },
     { href: '/installningar', label: 'Inställningar', icon: '⚙️' }
   ]
 

@@ -1,9 +1,15 @@
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
+    const { searchParams } = new URL(request.url)
+    const jobType = searchParams.get('jobType') as 'product_texts' | 'ui_strings' | null
+
+    const whereClause = jobType ? { job_type: jobType } : {}
+
     const uploads = await prisma.upload.findMany({
+      where: whereClause,
       orderBy: { created_at: 'desc' },
       include: {
         products: {
