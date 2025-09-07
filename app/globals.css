@@ -490,6 +490,7 @@ tbody tr:hover {
   justify-content: flex-end;
   align-items: center;
   max-width: none;
+  position: relative;
 }
 
 .app-title {
@@ -1689,6 +1690,54 @@ tbody tr:hover {
   font-size: 1.25rem;
   font-weight: 700;
   color: #1e40af;
+}
+
+/* Breadcrumbs */
+.breadcrumbs {
+  margin: 0;
+  position: absolute;
+  left: 0;
+}
+
+.breadcrumbs-list {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  flex-wrap: wrap;
+  font-size: 0.875rem;
+}
+
+.breadcrumbs-item {
+  display: flex;
+  align-items: center;
+}
+
+.breadcrumbs-item:not(:last-child)::after {
+  content: '»';
+  color: #6b7280;
+  margin-left: 0.5rem;
+  font-weight: 400;
+}
+
+.breadcrumbs-link {
+  color: #1d40b0;
+  text-decoration: none;
+  font-weight: 500;
+  transition: color 0.2s ease;
+}
+
+.breadcrumbs-link:hover,
+.breadcrumbs-link:focus {
+  color: #1e3a8a;
+  text-decoration: underline;
+}
+
+.breadcrumbs-current-text {
+  color: #111827;
+  font-weight: 600;
 }
 
 /* Responsive */

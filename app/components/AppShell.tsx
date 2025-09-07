@@ -2,6 +2,7 @@
 
 import { ReactNode, useState, useRef, useEffect } from 'react'
 import Sidebar from './Sidebar'
+import Breadcrumbs from './Breadcrumbs'
 
 interface AppShellProps {
   children: ReactNode
@@ -46,6 +47,7 @@ export default function AppShell({ children }: AppShellProps) {
       <div className="app-content">
         <header className="app-header">
           <div className="header-content">
+            <Breadcrumbs />
             <div className="header-actions">
               <div className="user-menu" ref={dropdownRef}>
                 <button 
