@@ -147,7 +147,7 @@ function BatchOversattningContent() {
   const [drawerField, setDrawerField] = useState<'description_sv' | 'optimized_sv' | 'translated_no' | 'translated_da' | 'translated_en' | 'translated_de' | 'translated_fr' | 'translated_es' | 'translated_it' | 'translated_pt' | 'translated_nl' | 'translated_pl' | 'translated_ru' | 'translated_fi' | null>(null)
   const [isDrawerOpen, setIsDrawerOpen] = useState(false)
   const [showDeleteModal, setShowDeleteModal] = useState(false)
-  const [deleteTarget, setDeleteTarget] = useState<{ type: 'upload', id: string, name: string } | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<{ type: 'upload' | 'batch', id: string, name: string, count?: number } | null>(null)
   
   // Prompt settings state
   const [promptSettings, setPromptSettings] = useState<PromptSettings>({
@@ -1090,8 +1090,40 @@ function BatchOversattningContent() {
     }
   }
 
-  const openDeleteModal = (type: 'upload', id: string, name: string) => {
-    setDeleteTarget({ type, id, name })
+  const handleDeleteBatch = async () => {
+    if (!deleteTarget) return
+
+    try {
+      const response = await fetch(`/api/batches/${deleteTarget.id}`, {
+        method: 'DELETE'
+      })
+
+      if (response.ok) {
+        setAvailableBatches(prev => prev.filter(batch => batch.id !== deleteTarget.id))
+        
+        if (selectedBatch?.id === deleteTarget.id) {
+          setSelectedBatch(null)
+          setBatchId('')
+          setParsedProducts([])
+          setParsedUIStrings([])
+          setSelectedIds(new Set())
+          setPhase('batched')
+          setCurrentStep(2)
+        }
+        setShowDeleteModal(false)
+        setDeleteTarget(null)
+        setUploadAlert('✅ Batch raderad')
+      } else {
+        const errorData = await response.json()
+        setUploadAlert(`❌ Fel vid radering av batch: ${errorData.error || 'Okänt fel'}`)
+      }
+    } catch (err) {
+      setUploadAlert('❌ Nätverksfel vid radering av batch')
+    }
+  }
+
+  const openDeleteModal = (type: 'upload' | 'batch', id: string, name: string, count?: number) => {
+    setDeleteTarget({ type, id, name, count })
     setShowDeleteModal(true)
     // Scroll to bottom to show the modal
     setTimeout(() => {
@@ -1608,14 +1640,15 @@ function BatchOversattningContent() {
 
         {/* Step 3: Optimize & Translate - Only show if currentStep === 3 */}
         {currentStep === 3 && (
-          <ModernStepCard
-            stepNumber={3}
-            title={jobType === 'product_texts' ? 'Optimera & Översätt' : 'Översätt'}
-            description={jobType === 'product_texts' ? 'Optimerar svenska texter och översätter till norska och danska' : 'Översätter UI-element till norska'}
-            icon={jobType === 'product_texts' ? '✨' : '🌐'}
-            isActive={currentStep >= 3}
-            isCompleted={currentStep > 3}
-          >
+          <div className="relative">
+            <ModernStepCard
+              stepNumber={3}
+              title={jobType === 'product_texts' ? 'Optimera & Översätt' : 'Översätt'}
+              description={jobType === 'product_texts' ? 'Optimerar svenska texter och översätter till norska och danska' : 'Översätter UI-element till norska'}
+              icon={jobType === 'product_texts' ? '✨' : '🌐'}
+              isActive={currentStep >= 3}
+              isCompleted={currentStep > 3}
+            >
             <div className="space-y-4">
               <div className="flex gap-4">
                 {jobType === 'product_texts' ? (
@@ -1899,7 +1932,26 @@ function BatchOversattningContent() {
                 </div>
               )}
             </div>
-          </ModernStepCard>
+            </ModernStepCard>
+          </div>
+        )}
+
+        {/* Delete batch button - below the widget */}
+        {currentStep === 3 && selectedBatch && (
+          <div className="flex justify-end mb-4">
+            <button
+              onClick={() => {
+                openDeleteModal('batch', selectedBatch.id, selectedBatch.filename, selectedBatch.total_products);
+              }}
+              className="bg-red-600 hover:bg-red-700 text-white p-2 rounded-md flex items-center justify-center shadow-lg"
+              title="Radera batch"
+              style={{ backgroundColor: '#dc2626', width: '40px', height: '40px' }}
+            >
+              <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
+              </svg>
+            </button>
+          </div>
         )}
 
 
@@ -1994,15 +2046,24 @@ function BatchOversattningContent() {
                 Bekräfta radering
               </h3>
               <p className="text-sm text-gray-600 mb-4">
-                Är du säker på att du vill radera uploaden "{deleteTarget.name}"?
-                Detta kommer också att radera alla relaterade batchar och produkter/UI-element.
+                {deleteTarget.type === 'upload' ? (
+                  <>
+                    Är du säker på att du vill radera uploaden "{deleteTarget.name}"?
+                    Detta kommer också att radera alla relaterade batchar och produkter/UI-element.
+                  </>
+                ) : (
+                  <>
+                    Är du säker på att du vill radera batchen "{deleteTarget.name}" ({deleteTarget.count} {jobType === 'product_texts' ? 'produkter' : 'UI-element'})?
+                    Detta kommer att ta bort batchen från listan.
+                  </>
+                )}
               </p>
               
               <div className="flex gap-4 justify-center">
                 <button
-                  onClick={handleDeleteUpload}
+                  onClick={deleteTarget.type === 'upload' ? handleDeleteUpload : handleDeleteBatch}
                   style={{
-                    background: '#1d40b0',
+                    background: deleteTarget.type === 'upload' ? '#1d40b0' : '#dc2626',
                     color: 'white',
                     border: 'none',
                     padding: '0.75rem 1.5rem',
@@ -2010,16 +2071,22 @@ function BatchOversattningContent() {
                     fontWeight: '500',
                     fontSize: '0.875rem',
                     cursor: 'pointer',
-                    transition: '0.2s'
+                    transition: '0.2s',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.5rem'
                   }}
                   onMouseEnter={(e) => {
-                    e.currentTarget.style.background = '#1e3a8a'
+                    e.currentTarget.style.background = deleteTarget.type === 'upload' ? '#1e3a8a' : '#b91c1c'
                   }}
                   onMouseLeave={(e) => {
-                    e.currentTarget.style.background = '#1d40b0'
+                    e.currentTarget.style.background = deleteTarget.type === 'upload' ? '#1d40b0' : '#dc2626'
                   }}
                 >
-                  🗑️ Radera
+                  <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
+                  </svg>
+                  Radera
                 </button>
                 <button
                   onClick={() => {

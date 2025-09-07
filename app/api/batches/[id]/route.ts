@@ -10,9 +10,12 @@ export async function GET(
   try {
     const { id: batchId } = await params
 
-    // Get batch with products or UI items
+    // Get batch with products or UI items (only non-deleted)
     const batch = await prisma.productBatch.findUnique({
-      where: { id: batchId },
+      where: { 
+        id: batchId,
+        deleted_at: null // Only find non-deleted batches
+      },
       include: { 
         products: {
           select: {
@@ -76,8 +79,11 @@ export async function DELETE(
 
     // Check if batch exists and get its status
     const batch = await prisma.productBatch.findUnique({
-      where: { id: batchId },
-      select: { id: true, status: true }
+      where: { 
+        id: batchId,
+        deleted_at: null // Only find non-deleted batches
+      },
+      select: { id: true, status: true, filename: true, total_products: true }
     })
 
     if (!batch) {
@@ -87,17 +93,15 @@ export async function DELETE(
       )
     }
 
-    // Prevent deletion of processing or exported batches
-    if (batch.status === 'running' || batch.status === 'pending') {
-      return NextResponse.json(
-        { error: 'Cannot delete batch that is currently processing' },
-        { status: 400 }
-      )
-    }
+    // Allow deletion of any batch regardless of status
 
-    // Delete batch and cascade to related items
-    await prisma.productBatch.delete({
-      where: { id: batchId }
+    // Soft delete the batch
+    await prisma.productBatch.update({
+      where: { id: batchId },
+      data: { 
+        deleted_at: new Date(),
+        updated_at: new Date()
+      }
     })
 
     return NextResponse.json({ ok: true })

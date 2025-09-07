@@ -89,7 +89,10 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url)
     const jobType = searchParams.get('jobType')
 
-    const whereClause = jobType ? { job_type: jobType as 'product_texts' | 'ui_strings' } : {}
+    const whereClause = {
+      deleted_at: null, // Only show non-deleted batches
+      ...(jobType ? { job_type: jobType as 'product_texts' | 'ui_strings' } : {})
+    }
 
     const batches = await prisma.productBatch.findMany({
       where: whereClause,

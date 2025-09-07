@@ -27,6 +27,9 @@ export async function GET(request: NextRequest) {
           }
         },
         batches: {
+          where: {
+            deleted_at: null // Only include non-deleted batches
+          },
           select: {
             id: true,
             status: true
