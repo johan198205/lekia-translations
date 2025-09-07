@@ -64,7 +64,7 @@ export default function InstallningarPage() {
   const [editingGlossaryId, setEditingGlossaryId] = useState<string | null>(null);
 
   useEffect(() => {
-    loadSettings();
+    initializeDatabase();
     // Load saved filename from localStorage
     const savedFileName = localStorage.getItem('analyzedFileName');
     if (savedFileName) {
@@ -86,6 +86,26 @@ export default function InstallningarPage() {
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [showLanguageDropdown]);
+
+  const initializeDatabase = async () => {
+    try {
+      const response = await fetch('/api/init-db', {
+        method: 'POST'
+      });
+      
+      if (response.ok) {
+        console.log('Database initialized successfully');
+        // Load settings after database is initialized
+        loadSettings();
+      } else {
+        console.error('Failed to initialize database');
+        setMessage({ type: 'error', text: 'Kunde inte initialisera databas' });
+      }
+    } catch (error) {
+      console.error('Database initialization error:', error);
+      setMessage({ type: 'error', text: 'Kunde inte initialisera databas' });
+    }
+  };
 
   const loadSettings = async () => {
     try {
