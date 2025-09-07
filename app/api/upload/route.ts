@@ -109,7 +109,19 @@ export async function POST(request: NextRequest) {
 
       return NextResponse.json({
         uploadId: upload.id,
-        products: result.products,
+        products: products.map(product => ({
+          id: product.id,
+          name_sv: product.name_sv,
+          description_sv: product.description_sv,
+          attributes: product.attributes,
+          tone_hint: product.tone_hint,
+          status: product.status,
+          batch_id: product.batch_id,
+          optimized_sv: product.optimized_sv,
+          translated_da: product.translated_da,
+          translated_no: product.translated_no,
+          error_message: product.error_message
+        })),
         meta: result.meta
       });
     } else if (jobType === 'ui_strings' && result.uiStrings) {

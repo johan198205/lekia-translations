@@ -10,12 +10,13 @@ import ModernSummaryCard from '../components/ModernSummaryCard'
 import ModernRadioCard from '../components/ModernRadioCard'
 import FlagTranslateButton from '../components/FlagTranslateButton'
 import { getLanguageDisplayName } from '@/lib/languages'
+import { codeToCountry } from '@/lib/flag-utils'
 
 interface Progress {
   percent: number
-  done?: number
-  total?: number
-  counts?: {
+  done: number
+  total: number
+  counts: {
     pending: number
     optimizing: number
     optimized: number
@@ -127,6 +128,8 @@ function BatchOversattningContent() {
   const [showRegenerateModal, setShowRegenerateModal] = useState(false)
   const [progress, setProgress] = useState<Progress>({
     percent: 0,
+    done: 0,
+    total: 0,
     counts: { pending: 0, optimizing: 0, optimized: 0, translating: 0, completed: 0, error: 0 }
   })
   const [phase, setPhase] = useState<Phase>('idle')
@@ -144,6 +147,8 @@ function BatchOversattningContent() {
   const [translationStartTime, setTranslationStartTime] = useState<number | null>(null)
   const [translationLanguage, setTranslationLanguage] = useState<string | null>(null)
   const [translationLanguages, setTranslationLanguages] = useState<string[]>([])
+  const [optimizeSv, setOptimizeSv] = useState<boolean>(false)
+  const [selectedTargetLangs, setSelectedTargetLangs] = useState<string[]>([])
   const [drawerProduct, setDrawerProduct] = useState<Product | null>(null)
   const [drawerField, setDrawerField] = useState<'description_sv' | 'optimized_sv' | 'translated_no' | 'translated_da' | 'translated_en' | 'translated_de' | 'translated_fr' | 'translated_es' | 'translated_it' | 'translated_pt' | 'translated_nl' | 'translated_pl' | 'translated_ru' | 'translated_fi' | null>(null)
   const [isDrawerOpen, setIsDrawerOpen] = useState(false)
@@ -249,40 +254,11 @@ function BatchOversattningContent() {
     }
   }, [promptSettings])
 
-  // Update progress based on selected products during optimization and translation
-  useEffect(() => {
-    if ((phase === 'optimizing' || phase === 'translating') && batchId && jobType) {
-      const interval = setInterval(() => {
-        fetchUpdatedProducts()
-      }, 1000) // Check every second
-      
-      return () => clearInterval(interval)
-    }
-  }, [phase, batchId, jobType])
+  // Progress updates are handled by SSE events, no need for polling
 
-  // Update timer display during optimization
-  useEffect(() => {
-    if (optimizationStartTime && phase === 'optimizing') {
-      const interval = setInterval(() => {
-        // Force re-render to update timer
-        setProgress(prev => ({ ...prev }))
-      }, 1000)
-      
-      return () => clearInterval(interval)
-    }
-  }, [optimizationStartTime, phase])
+  // Timer updates are handled by the ProgressBar component itself
 
-  // Update timer display during translation
-  useEffect(() => {
-    if (translationStartTime && phase === 'translating') {
-      const interval = setInterval(() => {
-        // Force re-render to update timer
-        setProgress(prev => ({ ...prev }))
-      }, 1000)
-      
-      return () => clearInterval(interval)
-    }
-  }, [translationStartTime, phase])
+  // Timer updates are handled by the ProgressBar component itself
 
   // Cleanup SSE on unmount
   useEffect(() => {
@@ -537,6 +513,8 @@ function BatchOversattningContent() {
             const batchData = await batchResponse.json()
             if (jobType === 'product_texts' && batchData.products) {
               setParsedProducts(batchData.products)
+              // Set selectedIds to include all products in the batch
+              setSelectedIds(new Set(batchData.products.map((_: any, index: number) => index)))
             } else if (jobType === 'ui_strings' && batchData.ui_items) {
               const uiItems = batchData.ui_items.map((item: any) => ({
                 id: item.id,
@@ -545,6 +523,8 @@ function BatchOversattningContent() {
                 status: item.status
               }))
               setParsedUIStrings(uiItems)
+              // Set selectedIds to include all UI items in the batch
+              setSelectedIds(new Set(uiItems.map((_: any, index: number) => index)))
             }
           }
         } catch (err) {
@@ -831,6 +811,95 @@ function BatchOversattningContent() {
     }
   }
 
+  const handleCombinedProcess = async () => {
+    if (!batchId || selectedIds.size === 0) return
+
+    try {
+      // Show progress UI immediately
+      setPhase('translating')
+      setTranslateAlert('✅ Bearbetning startad! Följer framsteg...')
+      setTranslationStartTime(Date.now())
+      
+      // Start SSE connection before POST
+      if (eventSourceRef.current) {
+        eventSourceRef.current.close()
+      }
+      
+      const eventSource = new EventSource(`/api/batches/${batchId}/events?selectedIndices=${Array.from(selectedIds).join(',')}`)
+      eventSourceRef.current = eventSource
+      
+      eventSource.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data)
+          console.log('[SSE] Received event:', data)
+          
+          if (data.type === 'progress') {
+            setProgress(data.data)
+          } else if (data.type === 'batch_completed' || data.type === 'end') {
+            eventSource.close()
+            eventSourceRef.current = null
+            setPhase('readyToExport')
+            setTranslateAlert('✅ Bearbetning klar!')
+            setTranslationStartTime(null)
+            // Fetch updated data to show the results
+            fetchUpdatedProducts()
+          }
+        } catch (error) {
+          console.error('Error parsing SSE data:', error)
+        }
+      }
+
+      eventSource.onerror = (error) => {
+        console.error('SSE error:', error)
+        eventSource.close()
+        eventSourceRef.current = null
+      }
+
+      // Make API call
+      const response = await fetch(`/api/batches/${batchId}/process`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          indices: Array.from(selectedIds),
+          optimizeSv: optimizeSv,
+          targetLangs: selectedTargetLangs,
+          clientPromptSettings: {
+            optimize: {
+              system: promptSettings.optimize.system,
+              headers: promptSettings.optimize.headers,
+              maxWords: promptSettings.optimize.maxWords,
+              temperature: promptSettings.optimize.temperature,
+              model: promptSettings.optimize.model,
+              toneDefault: promptSettings.optimize.toneDefault
+            },
+            translate: {
+              system: promptSettings.translate.system,
+              temperature: promptSettings.translate.temperature,
+              model: promptSettings.translate.model
+            }
+          }
+        })
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        setTranslateAlert(`❌ Fel vid start av bearbetning: ${errorData.error || 'Okänt fel'}`)
+        eventSource.close()
+        eventSourceRef.current = null
+        setPhase('readyToExport')
+        setTranslationStartTime(null)
+      }
+    } catch (err) {
+      setTranslateAlert('❌ Fel vid start av bearbetning: Nätverksfel')
+      if (eventSourceRef.current) {
+        eventSourceRef.current.close()
+        eventSourceRef.current = null
+      }
+      setPhase('readyToExport')
+      setTranslationStartTime(null)
+    }
+  }
+
   const handleExport = () => {
     if (!batchId) return
     
@@ -846,6 +915,16 @@ function BatchOversattningContent() {
       newLanguages.add(lang)
     }
     setLanguages(newLanguages)
+  }
+
+  const handleTargetLangChange = (lang: string) => {
+    setSelectedTargetLangs(prev => {
+      if (prev.includes(lang)) {
+        return prev.filter(l => l !== lang)
+      } else {
+        return [...prev, lang]
+      }
+    })
   }
 
   const getCurrentItems = () => {
@@ -1650,84 +1729,118 @@ function BatchOversattningContent() {
               isActive={currentStep >= 3}
               isCompleted={currentStep > 3}
             >
-            <div className="space-y-4">
-              <div className="flex gap-4">
-                {jobType === 'product_texts' ? (
-                  <>
-                    <button
-                      onClick={handleOptimize}
-                      disabled={!batchId || phase === 'optimizing'}
-                      className="bg-purple-600 text-white px-4 py-2 rounded-md hover:bg-purple-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
-                    >
-                      Optimera (SV)
-                    </button>
-                    
-                    {/* Översättningsknappar för produkttexter */}
-                    {(() => {
-                      const selectedProducts = Array.from(selectedIds).map(index => parsedProducts[index]).filter(Boolean)
-                      const allHaveOptimizedSv = selectedProducts.length > 0 && selectedProducts.every(p => p.optimized_sv && p.optimized_sv.trim())
-                      const hasSelectedProducts = selectedIds.size > 0
-                      
-                      return (
-                        <>
-                          {translationLanguages.map((langCode, index) => {
-                            return (
-                              <FlagTranslateButton
-                                key={langCode}
-                                langCode={langCode}
-                                onClick={() => handleTranslateSpecific(langCode)}
-                                disabled={!batchId || !allHaveOptimizedSv || !hasSelectedProducts || phase === 'translating'}
-                                loading={phase === 'translating' && translationLanguage === langCode}
-                                title={!allHaveOptimizedSv ? "Kräver optimerad svensk text" : ""}
-                              />
-                            )
-                          })}
-                        </>
-                      )
-                    })()}
-                  </>
-                ) : (
-                  <>
-                    {/* Översättningsknappar för UI-element */}
-                    {translationLanguages.map((langCode, index) => {
-                      return (
-                        <FlagTranslateButton
-                          key={langCode}
-                          langCode={langCode}
-                          onClick={() => handleTranslateSpecific(langCode)}
-                          disabled={!batchId || selectedIds.size === 0 || phase === 'translating'}
-                          loading={phase === 'translating' && translationLanguage === langCode}
-                        />
-                      )
-                    })}
-                  </>
-                )}
-              </div>
-              
-              {phase === 'optimizing' && (
+            <div className="space-y-6">
+              {jobType === 'product_texts' && (
+                <div className="space-y-4">
+                  {/* Optimize Swedish checkbox */}
+                  <div className="flex items-center space-x-4 p-4 bg-gray-50 rounded-lg border hover:bg-gray-100 transition-colors">
+                    <input
+                      type="checkbox"
+                      id="optimize-sv"
+                      checked={optimizeSv}
+                      onChange={(e) => setOptimizeSv(e.target.checked)}
+                      className="h-6 w-6 text-blue-600 focus:ring-blue-500 border-gray-300 rounded cursor-pointer"
+                    />
+                    <label htmlFor="optimize-sv" className="text-lg font-medium text-gray-700 cursor-pointer flex items-center space-x-2">
+                      <span className="text-2xl">✨</span>
+                      <span>Optimera svenska först</span>
+                    </label>
+                  </div>
+
+                  {/* Language selection checkboxes */}
+                  <div className="space-y-4">
+                    <label className="text-lg font-medium text-gray-700">
+                      Välj språk att översätta till:
+                    </label>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {translationLanguages.map((langCode) => (
+                        <div key={langCode} className="flex items-center space-x-4 p-4 bg-gray-50 rounded-lg border hover:bg-gray-100 transition-colors">
+                          <input
+                            type="checkbox"
+                            id={`lang-${langCode}`}
+                            checked={selectedTargetLangs.includes(langCode)}
+                            onChange={() => handleTargetLangChange(langCode)}
+                            className="h-6 w-6 text-blue-600 focus:ring-blue-500 border-gray-300 rounded cursor-pointer"
+                          />
+                          <label 
+                            htmlFor={`lang-${langCode}`} 
+                            className="text-base text-gray-700 flex items-center space-x-3 cursor-pointer"
+                          >
+                            <span className="text-3xl">{codeToCountry(langCode).emoji}</span>
+                            <div className="flex flex-col">
+                              <span className="font-semibold text-lg">{codeToCountry(langCode).display}</span>
+                              <span className="text-sm text-gray-500">({langCode.toUpperCase()})</span>
+                            </div>
+                          </label>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                </div>
+              )}
+
+              {jobType === 'ui_strings' && (
+                <div className="space-y-4">
+                  {/* Language selection checkboxes for UI strings */}
+                  <div className="space-y-4">
+                    <label className="text-lg font-medium text-gray-700">
+                      Välj språk att översätta till:
+                    </label>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {translationLanguages.map((langCode) => (
+                        <div key={langCode} className="flex items-center space-x-4 p-4 bg-gray-50 rounded-lg border hover:bg-gray-100 transition-colors">
+                          <input
+                            type="checkbox"
+                            id={`ui-lang-${langCode}`}
+                            checked={selectedTargetLangs.includes(langCode)}
+                            onChange={() => handleTargetLangChange(langCode)}
+                            className="h-6 w-6 text-blue-600 focus:ring-blue-500 border-gray-300 rounded cursor-pointer"
+                          />
+                          <label 
+                            htmlFor={`ui-lang-${langCode}`} 
+                            className="text-base text-gray-700 flex items-center space-x-3 cursor-pointer"
+                          >
+                            <span className="text-3xl">{codeToCountry(langCode).emoji}</span>
+                            <div className="flex flex-col">
+                              <span className="font-semibold text-lg">{codeToCountry(langCode).display}</span>
+                              <span className="text-sm text-gray-500">({langCode.toUpperCase()})</span>
+                            </div>
+                          </label>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                </div>
+              )}
+
+              {/* Progress bars */}
+              {phase === 'optimizing' && progress && (
                 <ProgressBar
-                  percent={progress.percent}
-                  done={progress.done}
-                  total={progress.total}
-                  counts={progress.counts}
+                  percent={progress.percent || 0}
+                  done={progress.done || 0}
+                  total={progress.total || 0}
+                  counts={progress.counts || { pending: 0, optimizing: 0, optimized: 0, translating: 0, completed: 0, error: 0 }}
                   startTime={optimizationStartTime}
                   jobType={jobType}
                   phase="optimizing"
                 />
               )}
 
-              {phase === 'translating' && (
+              {phase === 'translating' && progress && (
                 <ProgressBar
-                  percent={progress.percent}
-                  done={progress.done}
-                  total={progress.total}
-                  counts={progress.counts}
+                  percent={progress.percent || 0}
+                  done={progress.done || 0}
+                  total={progress.total || 0}
+                  counts={progress.counts || { pending: 0, optimizing: 0, optimized: 0, translating: 0, completed: 0, error: 0 }}
                   startTime={translationStartTime}
                   jobType={jobType}
                   phase="translating"
                 />
               )}
               
+              {/* Alerts */}
               {optimizeAlert && (
                 <p className={`text-sm ${optimizeAlert.startsWith('✅') ? 'text-green-600' : 'text-red-600'}`}>
                   {optimizeAlert}
@@ -1739,7 +1852,7 @@ function BatchOversattningContent() {
                   {translateAlert}
                 </p>
               )}
-              
+
               {/* Visa optimerade produkter eller UI-element */}
               {phase === 'readyToExport' && (
                 <div className="mt-4 p-4 bg-gray-50 rounded-lg">
@@ -1764,6 +1877,23 @@ function BatchOversattningContent() {
                     >
                       Avmarkera alla
                     </button>
+                    <button
+                      onClick={handleCombinedProcess}
+                      disabled={!batchId || selectedIds.size === 0 || (!optimizeSv && selectedTargetLangs.length === 0)}
+                      className="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-sm font-medium"
+                    >
+                      🚀 Kör bearbetning
+                    </button>
+                    {selectedIds.size === 0 && (
+                      <span className="text-sm text-gray-500 flex items-center">
+                        Välj produkter att bearbeta
+                      </span>
+                    )}
+                    {selectedIds.size > 0 && !optimizeSv && selectedTargetLangs.length === 0 && (
+                      <span className="text-sm text-gray-500 flex items-center">
+                        Välj "Optimera svenska först" eller minst ett språk att översätta till
+                      </span>
+                    )}
                   </div>
                   
                   {/* Produktlista eller UI-element lista */}
@@ -1794,9 +1924,30 @@ function BatchOversattningContent() {
                           ) : (
                             <>
                               <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">NAMN</th>
-                              {parsedUIStrings.length > 0 && Object.keys(parsedUIStrings[0].values).map(locale => (
-                                <th key={locale} className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{locale}</th>
-                              ))}
+                              {/* Show all available locales from translationLanguages */}
+                              {translationLanguages.map((langCode) => {
+                                const localeMap: Record<string, string> = {
+                                  'da': 'da-DK',
+                                  'no': 'no-NO',
+                                  'en': 'en-US',
+                                  'de': 'de-DE',
+                                  'fr': 'fr-FR',
+                                  'es': 'es-ES',
+                                  'it': 'it-IT',
+                                  'pt': 'pt-PT',
+                                  'nl': 'nl-NL',
+                                  'pl': 'pl-PL',
+                                  'ru': 'ru-RU',
+                                  'fi': 'fi-FI',
+                                  'sv': 'sv-SE'
+                                };
+                                const locale = localeMap[langCode] || `${langCode}-${langCode.toUpperCase()}`;
+                                return (
+                                  <th key={locale} className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                    {locale}
+                                  </th>
+                                );
+                              })}
                               <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-20">STATUS</th>
                             </>
                           )}
@@ -1887,13 +2038,33 @@ function BatchOversattningContent() {
                                   {uiItem.name}
                                 </div>
                               </td>
-                              {Object.entries(uiItem.values).map(([locale, value]) => (
-                                <td key={locale} className="px-2 py-1 text-xs text-gray-500">
-                                  <div className="truncate" title={value as string}>
-                                    {value || '(tom)'}
-                                  </div>
-                                </td>
-                              ))}
+                              {/* Show all available locales from translationLanguages */}
+                              {translationLanguages.map((langCode) => {
+                                const localeMap: Record<string, string> = {
+                                  'da': 'da-DK',
+                                  'no': 'no-NO',
+                                  'en': 'en-US',
+                                  'de': 'de-DE',
+                                  'fr': 'fr-FR',
+                                  'es': 'es-ES',
+                                  'it': 'it-IT',
+                                  'pt': 'pt-PT',
+                                  'nl': 'nl-NL',
+                                  'pl': 'pl-PL',
+                                  'ru': 'ru-RU',
+                                  'fi': 'fi-FI',
+                                  'sv': 'sv-SE'
+                                };
+                                const locale = localeMap[langCode] || `${langCode}-${langCode.toUpperCase()}`;
+                                const value = uiItem.values[locale] || '';
+                                return (
+                                  <td key={locale} className="px-2 py-1 text-xs text-gray-500">
+                                    <div className="truncate" title={value}>
+                                      {value || '(tom)'}
+                                    </div>
+                                  </td>
+                                );
+                              })}
                               <td className="px-2 py-1 text-xs text-gray-700">
                                 {uiItem.status || 'pending'}
                               </td>
