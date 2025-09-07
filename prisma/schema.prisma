@@ -16,6 +16,7 @@ model Upload {
   upload_date     DateTime
   total_products  Int
   job_type        JobType  @default(product_texts)
+  meta            String?  // JSON string containing upload metadata including tokens
   products        Product[]
   batches         ProductBatch[]
   ui_items        UIItem[]
@@ -46,6 +47,7 @@ model Product {
   description_sv  String
   attributes      String?
   tone_hint       String?
+  raw_data        String?       // JSON string containing all original Excel columns
   optimized_sv    String?
   translated_da   String?
   translated_no   String?
@@ -102,11 +104,12 @@ enum ProductStatus {
 }
 
 model OpenAISettings {
-  id                    String   @id @default(cuid())
-  openaiApiKeyEnc       String?  // Encrypted API key
-  openaiModel           String   @default("gpt-4o-mini")
-  promptOptimizeSv      String   // Swedish optimization prompt
-  promptTranslateDirect String   // Direct translation prompt
-  created_at            DateTime @default(now())
-  updated_at            DateTime @updatedAt
+  id                           String   @id @default(cuid())
+  openaiApiKeyEnc              String?  // Encrypted API key
+  openaiModel                  String   @default("gpt-4o-mini")
+  promptOptimizeSv             String   // Swedish optimization prompt
+  promptTranslateDirect        String   // Direct translation prompt
+  exampleProductImportTokens   String?  // JSON string containing extracted tokens from example file
+  created_at                   DateTime @default(now())
+  updated_at                   DateTime @updatedAt
 }

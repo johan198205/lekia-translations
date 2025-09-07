@@ -35,6 +35,19 @@ export async function GET() {
         const totalProducts = upload.products.length
         const productsRemaining = upload.products.filter(p => p.status === 'pending').length
         
+        // Parse tokens from meta
+        let tokenCount = 0;
+        if (upload.meta) {
+          try {
+            const meta = JSON.parse(upload.meta);
+            if (meta.tokens?.tokens) {
+              tokenCount = meta.tokens.tokens.length;
+            }
+          } catch (error) {
+            console.warn('Failed to parse upload meta:', error);
+          }
+        }
+
         return {
           id: upload.id,
           filename: upload.filename,
@@ -44,7 +57,8 @@ export async function GET() {
           batches_count: upload.batches.length,
           job_type: upload.job_type,
           created_at: upload.created_at,
-          updated_at: upload.updated_at
+          updated_at: upload.updated_at,
+          token_count: tokenCount
         }
       } else {
         const totalUIItems = upload.ui_items.length
@@ -59,7 +73,8 @@ export async function GET() {
           batches_count: upload.batches.length,
           job_type: upload.job_type,
           created_at: upload.created_at,
-          updated_at: upload.updated_at
+          updated_at: upload.updated_at,
+          token_count: 0 // UI items don't have tokens
         }
       }
     })

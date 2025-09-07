@@ -53,6 +53,7 @@ interface Upload {
   job_type: 'product_texts' | 'ui_strings';
   created_at: string;
   updated_at: string;
+  token_count: number;
 }
 
 interface Batch {
@@ -1259,7 +1260,7 @@ function BatchOversattningContent() {
                         .filter(upload => upload.job_type === jobType)
                         .map((upload) => (
                         <option key={upload.id} value={upload.id}>
-                          {upload.filename} ({upload.products_remaining} {jobType === 'product_texts' ? 'produkter' : 'UI-element'} kvar, {upload.batches_count} batches)
+                          {upload.filename} ({upload.products_remaining} {jobType === 'product_texts' ? 'produkter' : 'UI-element'} kvar, {upload.batches_count} batches{upload.token_count > 0 ? `, ${upload.token_count} tokens` : ''})
                         </option>
                       ))}
                     </select>
@@ -1271,7 +1272,8 @@ function BatchOversattningContent() {
                           { label: 'Uppladdad', value: new Date(selectedUpload.upload_date).toLocaleDateString('sv-SE') },
                           { label: 'Totalt', value: selectedUpload.total_products },
                           { label: 'Kvar', value: selectedUpload.products_remaining },
-                          { label: 'Batchar', value: selectedUpload.batches_count }
+                          { label: 'Batchar', value: selectedUpload.batches_count },
+                          ...(selectedUpload.token_count > 0 ? [{ label: 'Tokens', value: selectedUpload.token_count }] : [])
                         ]}
                         onDelete={() => openDeleteModal('upload', selectedUpload.id, selectedUpload.filename)}
                         showDelete={true}
@@ -1709,9 +1711,9 @@ function BatchOversattningContent() {
                                     onClick={() => handleCellClick(product, 'optimized_sv')}
                                     title="Klicka för att redigera"
                                   >
-                                    <div className="truncate" dangerouslySetInnerHTML={{ 
-                                      __html: formatOptimizedText(product.optimized_sv.substring(0, 40) + (product.optimized_sv.length > 40 ? '...' : ''))
-                                    }} />
+                                    <div className="truncate font-mono text-xs">
+                                      {product.optimized_sv.substring(0, 40) + (product.optimized_sv.length > 40 ? '...' : '')}
+                                    </div>
                                   </div>
                                 ) : (
                                   <span className="text-gray-400">-</span>

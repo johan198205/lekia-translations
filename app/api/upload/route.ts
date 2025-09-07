@@ -58,13 +58,25 @@ export async function POST(request: NextRequest) {
     // Normalize Excel data
     const result = await normalize(buffer, jobType as 'product_texts' | 'ui_strings');
 
+    // Prepare meta data with tokens
+    let metaData = null;
+    if (result.meta && result.meta.tokens) {
+      try {
+        metaData = JSON.stringify(result.meta.tokens);
+      } catch (error) {
+        console.warn('Failed to serialize tokens:', error);
+        metaData = null;
+      }
+    }
+
     // Create upload first
     const upload = await prisma.upload.create({
       data: {
         filename: file.name,
         upload_date: new Date(),
         total_products: jobType === 'product_texts' ? (result.products?.length || 0) : (result.uiStrings?.length || 0),
-        job_type: jobType as 'product_texts' | 'ui_strings'
+        job_type: jobType as 'product_texts' | 'ui_strings',
+        meta: metaData
       }
     });
 
@@ -78,6 +90,7 @@ export async function POST(request: NextRequest) {
               description_sv: product.description_sv,
               attributes: product.attributes,
               tone_hint: product.tone_hint,
+              raw_data: product.raw_data ? JSON.stringify(product.raw_data) : null,
               status: 'pending',
               upload_id: upload.id
             }

@@ -10,6 +10,7 @@ export interface OpenAIConfig {
   model: string;
   promptOptimizeSv: string;
   promptTranslateDirect: string;
+  exampleProductImportTokens?: string | null;
 }
 
 /**
@@ -36,7 +37,8 @@ export async function getOpenAIConfig(): Promise<OpenAIConfig> {
       apiKey,
       model: settings.openaiModel,
       promptOptimizeSv: settings.promptOptimizeSv,
-      promptTranslateDirect: settings.promptTranslateDirect
+      promptTranslateDirect: settings.promptTranslateDirect,
+      exampleProductImportTokens: settings.exampleProductImportTokens
     };
   }
 
@@ -56,6 +58,7 @@ Regler:
 - Lägg INTE till #/## rubriknivåer, listtecken eller extra text
 - Behåll {{...}}, radbrytningar, taggar och ordningen exakt
 - Översätt endast textnoder
-- Temperatur: 0 (exakt översättning)`
+- Temperatur: 0 (exakt översättning)`,
+    exampleProductImportTokens: null
   };
 }

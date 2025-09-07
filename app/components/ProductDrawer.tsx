@@ -148,6 +148,19 @@ export default function ProductDrawer({ product, field, isOpen, onClose, onSave 
                 placeholder="Ange optimerad svensk beskrivning..."
                 autoFocus
               />
+              
+              {/* HTML Preview */}
+              {descriptionSv && descriptionSv.includes('<') && (
+                <div className="mt-4">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Förhandsvisning (HTML)
+                  </label>
+                  <div 
+                    className="border border-gray-300 rounded-md p-4 bg-gray-50 max-h-96 overflow-y-auto"
+                    dangerouslySetInnerHTML={{ __html: descriptionSv }}
+                  />
+                </div>
+              )}
             </div>
           )}
 
@@ -162,6 +175,19 @@ export default function ProductDrawer({ product, field, isOpen, onClose, onSave 
                 placeholder="Ange norsk beskrivning..."
                 autoFocus
               />
+              
+              {/* HTML Preview */}
+              {descriptionNo && descriptionNo.includes('<') && (
+                <div className="mt-4">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Förhandsvisning (HTML)
+                  </label>
+                  <div 
+                    className="border border-gray-300 rounded-md p-4 bg-gray-50 max-h-96 overflow-y-auto"
+                    dangerouslySetInnerHTML={{ __html: descriptionNo }}
+                  />
+                </div>
+              )}
             </div>
           )}
 
@@ -176,6 +202,19 @@ export default function ProductDrawer({ product, field, isOpen, onClose, onSave 
                 placeholder="Ange dansk beskrivning..."
                 autoFocus
               />
+              
+              {/* HTML Preview */}
+              {descriptionDa && descriptionDa.includes('<') && (
+                <div className="mt-4">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Förhandsvisning (HTML)
+                  </label>
+                  <div 
+                    className="border border-gray-300 rounded-md p-4 bg-gray-50 max-h-96 overflow-y-auto"
+                    dangerouslySetInnerHTML={{ __html: descriptionDa }}
+                  />
+                </div>
+              )}
             </div>
           )}
         </div>

@@ -34,8 +34,19 @@ export async function POST(
     const batch = await prisma.productBatch.findUnique({
       where: { id: batchId },
       include: { 
-        products: true,
-        ui_items: true
+        products: {
+          select: {
+            id: true,
+            name_sv: true,
+            description_sv: true,
+            attributes: true,
+            tone_hint: true,
+            raw_data: true,
+            status: true
+          }
+        },
+        ui_items: true,
+        upload: true
       }
     })
 
@@ -103,15 +114,19 @@ export async function POST(
         })
         
         // Use LLM adapter for optimization with server settings snapshot
+        console.log(`[OPTIMIZE] Product raw_data:`, product.raw_data);
         const optimizedText = await optimizeSv({
           nameSv: product.name_sv,
           descriptionSv: product.description_sv,
           attributes: product.attributes,
-          toneHint: product.tone_hint || undefined
+          toneHint: product.tone_hint || undefined,
+          rawData: product.raw_data || undefined
         }, {
           ...clientPromptSettings.optimize,
           model: jobConfig.model,
-          system: jobConfig.promptOptimizeSv  // This becomes the user prompt
+          system: jobConfig.promptOptimizeSv,  // This becomes the user prompt
+          uploadMeta: batch.upload?.meta || undefined,
+          settingsTokens: openaiConfig.exampleProductImportTokens || undefined
         })
         
         console.log(`[OPTIMIZE] Product ${product.name_sv} optimized successfully, length: ${optimizedText.length}`);

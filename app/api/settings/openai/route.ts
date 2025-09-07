@@ -7,7 +7,8 @@ const updateSettingsSchema = z.object({
   apiKey: z.string().optional(),
   openaiModel: z.string().optional(),
   promptOptimizeSv: z.string().optional(),
-  promptTranslateDirect: z.string().optional()
+  promptTranslateDirect: z.string().optional(),
+  exampleProductImportTokens: z.string().optional()
 });
 
 /**
@@ -26,6 +27,7 @@ export async function GET() {
         openaiModel: 'gpt-4o-mini',
         promptOptimizeSv: '',
         promptTranslateDirect: '',
+        exampleProductImportTokens: null,
         updatedAt: null
       });
     }
@@ -35,6 +37,7 @@ export async function GET() {
       openaiModel: settings.openaiModel,
       promptOptimizeSv: settings.promptOptimizeSv,
       promptTranslateDirect: settings.promptTranslateDirect,
+      exampleProductImportTokens: settings.exampleProductImportTokens,
       updatedAt: settings.updated_at
     });
   } catch (error) {
@@ -83,6 +86,23 @@ export async function PUT(request: NextRequest) {
       updateData.promptTranslateDirect = validatedData.promptTranslateDirect;
     }
 
+    if (validatedData.exampleProductImportTokens !== undefined) {
+      // Validate that it's valid JSON if provided
+      if (validatedData.exampleProductImportTokens && validatedData.exampleProductImportTokens.trim()) {
+        try {
+          JSON.parse(validatedData.exampleProductImportTokens);
+          updateData.exampleProductImportTokens = validatedData.exampleProductImportTokens;
+        } catch (error) {
+          return NextResponse.json(
+            { error: 'Invalid JSON format for exampleProductImportTokens' },
+            { status: 400 }
+          );
+        }
+      } else {
+        updateData.exampleProductImportTokens = null;
+      }
+    }
+
     let settings;
     if (existingSettings) {
       // Update existing settings
@@ -95,7 +115,8 @@ export async function PUT(request: NextRequest) {
       const createData: any = {
         openaiModel: updateData.openaiModel || 'gpt-4o-mini',
         promptOptimizeSv: updateData.promptOptimizeSv || '',
-        promptTranslateDirect: updateData.promptTranslateDirect || ''
+        promptTranslateDirect: updateData.promptTranslateDirect || '',
+        exampleProductImportTokens: updateData.exampleProductImportTokens || null
       };
       
       // Only set API key if it was provided
@@ -113,6 +134,7 @@ export async function PUT(request: NextRequest) {
       openaiModel: settings.openaiModel,
       promptOptimizeSv: settings.promptOptimizeSv,
       promptTranslateDirect: settings.promptTranslateDirect,
+      exampleProductImportTokens: settings.exampleProductImportTokens,
       updatedAt: settings.updated_at
     });
   } catch (error) {

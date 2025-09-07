@@ -1,5 +1,6 @@
 import { HAS_OPENAI, OPENAI_MODE, OPENAI_BASE_URL, OPENAI_MODEL_OPTIMIZE, OPENAI_MODEL_TRANSLATE } from '@/lib/env';
 import { getOpenAIConfig } from '@/lib/openai-config';
+import { createPromptBuilder, PromptContext } from '@/lib/prompt-builder';
 
 /**
  * Get current LLM mode and availability
@@ -17,6 +18,7 @@ export interface OptimizeInput {
   descriptionSv: string;
   attributes?: string | object | null;
   toneHint?: string;
+  rawData?: string | object; // Raw Excel data
 }
 
 /**
@@ -98,6 +100,8 @@ export async function optimizeSv(input: OptimizeInput, options?: {
   model?: string;
   toneDefault?: string;
   promptOptimizeSv?: string;
+  uploadMeta?: string;
+  settingsTokens?: string;
 }): Promise<string> {
   const { useLive, mode } = getLlmmode();
   
@@ -116,13 +120,61 @@ export async function optimizeSv(input: OptimizeInput, options?: {
       
       console.debug(`[LLM] Using model: ${targetModel}`);
       
-      // Use the user's custom prompt as the user prompt, with product data appended
-      const userPrompt = `${options?.system || config.promptOptimizeSv}
+      // Create prompt builder with token support
+      const promptBuilder = createPromptBuilder(options?.uploadMeta, options?.settingsTokens);
+      
+      // Build product data for token replacement
+      const productData: Record<string, string> = {
+        name_sv: input.nameSv,
+        title: input.nameSv, // alias
+        description_sv: input.descriptionSv,
+        sv_description: input.descriptionSv, // alias
+        attributes: typeof input.attributes === 'string' ? input.attributes : (input.attributes ? JSON.stringify(input.attributes) : ''),
+        tone_hint: input.toneHint || 'professionell'
+      };
 
-Originalnamn: ${input.nameSv}
-Originalbeskrivning: ${input.descriptionSv}
-Attribut (frivilligt): ${input.attributes ? JSON.stringify(input.attributes) : 'Inga attribut'}
-Ton: ${input.toneHint || 'professionell'}`;
+      // Add raw data from Excel if available
+      if (input.rawData) {
+        try {
+          const rawData = typeof input.rawData === 'string' ? JSON.parse(input.rawData) : input.rawData;
+          console.debug('[LLM] Raw data found:', Object.keys(rawData));
+          // Add all raw data fields as tokens
+          Object.entries(rawData).forEach(([key, value]) => {
+            const normalizedKey = key.toLowerCase().replace(/[^a-zA-Z0-9_\-]/g, '_');
+            productData[normalizedKey] = String(value || '');
+            console.debug(`[LLM] Added token: ${normalizedKey} = ${String(value || '')}`);
+          });
+        } catch (error) {
+          console.warn('Failed to parse raw data:', error);
+        }
+      } else {
+        console.debug('[LLM] No raw data available, trying to extract from attributes');
+        // Fallback: try to extract tokens from attributes field
+        if (input.attributes) {
+          const attributesStr = typeof input.attributes === 'string' ? input.attributes : JSON.stringify(input.attributes);
+          // Parse attributes like "Brand: Logitech | Series: Minecraft | Age: 7+ | Pieces: 238"
+          const attributePairs = attributesStr.split('|').map(pair => pair.trim());
+          attributePairs.forEach(pair => {
+            const [key, value] = pair.split(':').map(s => s.trim());
+            if (key && value) {
+              const normalizedKey = key.toLowerCase().replace(/[^a-zA-Z0-9_\-]/g, '_');
+              productData[normalizedKey] = value;
+              console.debug(`[LLM] Added token from attributes: ${normalizedKey} = ${value}`);
+            }
+          });
+        }
+      }
+
+      // Build context for prompt
+      const context: PromptContext = {
+        jobType: 'product_texts',
+        productData
+      };
+
+      // Use the user's custom prompt with token replacement
+      console.debug('[LLM] Product data for tokens:', productData);
+      const userPrompt = promptBuilder.buildPrompt(options?.system || config.promptOptimizeSv, context);
+      console.debug('[LLM] Final prompt after token replacement:', userPrompt);
 
       // Use a simple system prompt that doesn't dictate structure
       const systemPrompt = `Du är en expert på att optimera produkttexter. Följ användarens instruktioner exakt.`;

@@ -1,10 +1,12 @@
 import * as ExcelJS from 'exceljs';
+import { extractTokens, ExtractedTokens } from '@/lib/token-extractor';
 
 export interface Product {
   name_sv: string;
   description_sv: string;
   attributes?: string;
   tone_hint?: string;
+  raw_data?: Record<string, any>; // All original Excel columns
 }
 
 export interface UIString {
@@ -19,6 +21,7 @@ export interface NormalizeResult {
     rows: number;
     skipped: number;
     locales?: string[];
+    tokens?: ExtractedTokens;
   };
 }
 
@@ -68,6 +71,16 @@ async function normalizeProducts(worksheet: ExcelJS.Worksheet): Promise<Normaliz
   const headers = getNormalizedHeaders(worksheet);
   validateRequiredColumns(headers);
   
+  // Extract tokens from all column headers
+  const allHeaders = getAllHeaders(worksheet);
+  let extractedTokens;
+  try {
+    extractedTokens = extractTokens(allHeaders);
+  } catch (error) {
+    console.warn('Failed to extract tokens:', error);
+    extractedTokens = { tokens: [], systemTokens: [] };
+  }
+  
   const products: Product[] = [];
   let skipped = 0;
   
@@ -90,6 +103,7 @@ async function normalizeProducts(worksheet: ExcelJS.Worksheet): Promise<Normaliz
     meta: {
       rows: products.length,
       skipped,
+      tokens: extractedTokens,
     },
   };
 }
@@ -143,6 +157,20 @@ function getNormalizedHeaders(worksheet: ExcelJS.Worksheet): Record<string, numb
   return headers;
 }
 
+function getAllHeaders(worksheet: ExcelJS.Worksheet): string[] {
+  const headerRow = worksheet.getRow(1);
+  const headers: string[] = [];
+  
+  headerRow.eachCell((cell, colNumber) => {
+    const headerValue = String(cell.value || '').trim();
+    if (headerValue) {
+      headers.push(headerValue);
+    }
+  });
+  
+  return headers;
+}
+
 function validateRequiredColumns(headers: Record<string, number>): void {
   const missingColumns = REQUIRED_COLUMNS.filter(col => !(col in headers));
   
@@ -174,17 +202,33 @@ function parseProductRow(row: ExcelJS.Row, headers: Record<string, number>): Pro
   const attributes = headers.attributes ? getCellValue(row, headers.attributes) : undefined;
   const tone_hint = headers.tone_hint ? getCellValue(row, headers.tone_hint) : undefined;
   
+  // Collect all raw data from the row
+  const rawData: Record<string, any> = {};
+  row.eachCell((cell, colNumber) => {
+    const headerValue = getHeaderValue(row.worksheet, colNumber);
+    if (headerValue) {
+      rawData[headerValue] = cell.value || '';
+    }
+  });
+  
   return {
     name_sv: name_sv.trim(),
     description_sv: truncateDescription(description_sv.trim()),
     attributes: attributes?.trim(),
     tone_hint: tone_hint?.trim(),
+    raw_data: rawData,
   };
 }
 
 function getCellValue(row: ExcelJS.Row, colNumber: number): string {
   const cell = row.getCell(colNumber);
   return String(cell.value || '');
+}
+
+function getHeaderValue(worksheet: ExcelJS.Worksheet, colNumber: number): string {
+  const headerRow = worksheet.getRow(1);
+  const cell = headerRow.getCell(colNumber);
+  return String(cell.value || '').trim();
 }
 
 function truncateDescription(description: string): string {
