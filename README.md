@@ -78,3 +78,4 @@ Systemet mappar automatiskt följande kolumnnamn:
 - Litium-specifika kolumnalias
 - Strukturerade attribut (parsa till objekt)
 - Smartare beskrivningstrunkering
+# Deployment trigger Sun Sep  7 23:03:52 CEST 2025
