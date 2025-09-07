@@ -448,11 +448,15 @@ export default function InstallningarPage() {
 
   if (isLoading) {
     return (
-      <div style={{ flex: 1, padding: '2rem', background: 'linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%)', minHeight: 'calc(100vh - 80px)' }}>
+      <div style={{ flex: 1, padding: '2rem', background: '#fcfbf7', minHeight: 'calc(100vh - 80px)' }}>
         <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
-          <div style={{ background: 'white', borderRadius: '1rem', padding: '2rem', marginBottom: '2rem', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)', border: '1px solid #e5e7eb', textAlign: 'center' }}>
-            <h1 style={{ fontSize: '2rem', fontWeight: '700', color: '#111827', margin: '0 0 0.5rem 0' }}>Inställningar</h1>
-            <p style={{ fontSize: '1.125rem', color: '#6b7280', margin: '0' }}>Konfigurera dina AI-inställningar</p>
+          <div className="start-header" style={{ marginBottom: '4rem' }}>
+            <h1 className="start-title">
+              Inställningar
+            </h1>
+            <p className="start-subtitle">
+              Konfigurera dina AI-inställningar
+            </p>
           </div>
           <div style={{ background: 'white', borderRadius: '1.5rem', padding: '2rem', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)', border: '1px solid #e5e7eb' }}>
             <p style={{ textAlign: 'center', color: '#6b7280' }}>Laddar inställningar...</p>
@@ -463,23 +467,27 @@ export default function InstallningarPage() {
   }
 
   return (
-    <div style={{ flex: 1, padding: '2rem', background: 'linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%)', minHeight: 'calc(100vh - 80px)' }}>
+    <div style={{ flex: 1, padding: '2rem', background: '#fcfbf7', minHeight: 'calc(100vh - 80px)' }}>
       <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
-        <div style={{ background: 'white', borderRadius: '1rem', padding: '2rem', marginBottom: '2rem', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)', border: '1px solid #e5e7eb', textAlign: 'center' }}>
-          <h1 style={{ fontSize: '2rem', fontWeight: '700', color: '#111827', margin: '0 0 0.5rem 0' }}>Inställningar</h1>
-          <p style={{ fontSize: '1.125rem', color: '#6b7280', margin: '0' }}>Konfigurera dina AI-inställningar</p>
+        <div className="start-header" style={{ marginBottom: '4rem' }}>
+          <h1 className="start-title">
+            Inställningar
+          </h1>
+          <p className="start-subtitle">
+            Konfigurera dina AI-inställningar
+          </p>
         </div>
         
         <div style={{ background: 'white', borderRadius: '1.5rem', padding: '2rem', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)', border: '2px solid transparent', transition: 'all 0.3s ease', position: 'relative', overflow: 'hidden' }}>
           <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.05) 0%, rgba(139, 92, 246, 0.05) 100%)', opacity: 0 }}></div>
           <div style={{ position: 'relative', zIndex: 1 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem', marginBottom: '2rem' }}>
-              <div style={{ position: 'relative', width: '3rem', height: '3rem', borderRadius: '50%', background: 'linear-gradient(135deg, #3b82f6, #1d4ed8)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+              <div style={{ position: 'relative', width: '3rem', height: '3rem', borderRadius: '50%', background: 'linear-gradient(135deg, #1d40b0, #1e3a8a)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                 <svg style={{ width: '1.5rem', height: '1.5rem', color: 'white' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                 </svg>
-                <div style={{ position: 'absolute', top: '-0.5rem', right: '-0.5rem', width: '1.5rem', height: '1.5rem', background: 'white', border: '2px solid #3b82f6', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.75rem', fontWeight: '700', color: '#3b82f6' }}>1</div>
+                <div style={{ position: 'absolute', top: '-0.5rem', right: '-0.5rem', width: '1.5rem', height: '1.5rem', background: 'white', border: '2px solid #1d40b0', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.75rem', fontWeight: '700', color: '#1d40b0' }}>1</div>
               </div>
               <div style={{ flex: 1 }}>
                 <h2 style={{ fontSize: '1.5rem', fontWeight: '700', color: '#1f2937', margin: '0 0 0.5rem 0', letterSpacing: '-0.01em' }}>OpenAI-inställningar</h2>
@@ -514,7 +522,7 @@ export default function InstallningarPage() {
                     <button
                       type="button"
                       onClick={() => setShowApiKeyInput(true)}
-                      style={{ fontSize: '0.875rem', color: '#2563eb', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}
+                      style={{ fontSize: '0.875rem', color: '#1d40b0', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}
                     >
                       Byt nyckel
                     </button>
@@ -540,7 +548,7 @@ export default function InstallningarPage() {
                   onChange={(e) => setFormData(prev => ({ ...prev, openaiModel: e.target.value }))}
                   style={{ 
                     width: '100%', 
-                    padding: '0.75rem', 
+                    padding: '10px', 
                     border: '1px solid #d1d5db', 
                     borderRadius: '0.5rem', 
                     outline: 'none', 
@@ -583,7 +591,7 @@ export default function InstallningarPage() {
                 onClick={handleSave}
                 disabled={!hasChanges() || isSaving}
                 style={{
-                  background: hasChanges() && !isSaving ? '#3b82f6' : '#9ca3af',
+                  background: hasChanges() && !isSaving ? '#1d40b0' : '#9ca3af',
                   color: 'white',
                   border: 'none',
                   padding: '1rem 2rem',
@@ -640,7 +648,7 @@ export default function InstallningarPage() {
                       disabled={isUploadingExample}
                       style={{ 
                         flex: 1,
-                        padding: '0.75rem', 
+                        padding: '10px', 
                         border: '1px solid #d1d5db', 
                         borderRadius: '0.5rem', 
                         outline: 'none', 
@@ -676,7 +684,7 @@ export default function InstallningarPage() {
                   {/* File status display */}
                   {(exampleFile || extractedTokens.length > 0) && (
                     <div style={{ 
-                      padding: '0.75rem', 
+                      padding: '10px', 
                       backgroundColor: '#f0f9ff', 
                       borderRadius: '0.5rem', 
                       border: '1px solid #bae6fd',
@@ -894,7 +902,7 @@ export default function InstallningarPage() {
                   onChange={(e) => handleOriginalLanguageChange(e.target.value)}
                   style={{ 
                     width: '100%', 
-                    padding: '0.75rem', 
+                    padding: '10px', 
                     border: '1px solid #d1d5db', 
                     borderRadius: '0.5rem', 
                     outline: 'none', 
@@ -1029,7 +1037,7 @@ export default function InstallningarPage() {
                     placeholder="Sök språk (t.ex. 'danska' eller 'da')..."
                     style={{ 
                       width: '100%', 
-                      padding: '0.75rem', 
+                      padding: '10px', 
                       border: '1px solid #d1d5db', 
                       borderRadius: '0.5rem', 
                       outline: 'none', 
@@ -1061,7 +1069,7 @@ export default function InstallningarPage() {
                             onClick={() => addLanguage(lang.code)}
                             style={{
                               width: '100%',
-                              padding: '0.75rem',
+                              padding: '10px',
                               textAlign: 'left',
                               border: 'none',
                               backgroundColor: 'transparent',
@@ -1138,7 +1146,7 @@ export default function InstallningarPage() {
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.5rem' }}>
                           <div style={{ flex: 1 }}>
                             <div style={{ fontSize: '0.875rem', fontWeight: '600', color: '#1f2937', marginBottom: '0.25rem' }}>
-                              Källterm: <span style={{ color: '#3b82f6' }}>"{entry.source}"</span>
+                              Källterm: <span style={{ color: '#1d40b0' }}>"{entry.source}"</span>
                             </div>
                             {entry.comment && (
                               <div style={{ fontSize: '0.75rem', color: '#6b7280', marginBottom: '0.5rem' }}>

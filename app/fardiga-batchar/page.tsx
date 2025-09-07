@@ -294,14 +294,22 @@ export default function FardigaBatcharPage() {
   const openDeleteModal = (type: 'upload', id: string, name: string) => {
     setDeleteTarget({ type, id, name })
     setShowDeleteModal(true)
+    // Scroll to bottom to show the modal
+    setTimeout(() => {
+      window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' })
+    }, 100)
   }
 
   return (
-    <div style={{ flex: 1, padding: '2rem', background: 'linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%)', minHeight: 'calc(100vh - 80px)' }}>
+    <div style={{ flex: 1, padding: '2rem', background: '#fcfbf7', minHeight: 'calc(100vh - 80px)' }}>
       <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
-        <div style={{ background: 'white', borderRadius: '1rem', padding: '2rem', marginBottom: '2rem', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)', border: '1px solid #e5e7eb', textAlign: 'center' }}>
-          <h1 style={{ fontSize: '2rem', fontWeight: '700', color: '#111827', margin: '0 0 0.5rem 0' }}>Färdiga uploads</h1>
-          <p style={{ fontSize: '1.125rem', color: '#6b7280', margin: '0' }}>Hantera och granska dina färdiga uploads med aggregerade resultat</p>
+        <div className="start-header" style={{ marginBottom: '4rem' }}>
+          <h1 className="start-title">
+            Färdiga uploads
+          </h1>
+          <p className="start-subtitle">
+            Hantera och granska dina färdiga uploads med aggregerade resultat
+          </p>
         </div>
         
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
@@ -310,11 +318,11 @@ export default function FardigaBatcharPage() {
             <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.05) 0%, rgba(139, 92, 246, 0.05) 100%)', opacity: 0 }}></div>
             <div style={{ position: 'relative', zIndex: 1 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem', marginBottom: '2rem' }}>
-                <div style={{ position: 'relative', width: '3rem', height: '3rem', borderRadius: '50%', background: 'linear-gradient(135deg, #3b82f6, #1d4ed8)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <div style={{ position: 'relative', width: '3rem', height: '3rem', borderRadius: '50%', background: 'linear-gradient(135deg, #1d40b0, #1e3a8a)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                   <svg style={{ width: '1.5rem', height: '1.5rem', color: 'white' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
                   </svg>
-                  <div style={{ position: 'absolute', top: '-0.5rem', right: '-0.5rem', width: '1.5rem', height: '1.5rem', background: 'white', border: '2px solid #3b82f6', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.75rem', fontWeight: '700', color: '#3b82f6' }}>1</div>
+                  <div style={{ position: 'absolute', top: '-0.5rem', right: '-0.5rem', width: '1.5rem', height: '1.5rem', background: 'white', border: '2px solid #1d40b0', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.75rem', fontWeight: '700', color: '#1d40b0' }}>1</div>
                 </div>
                 <div style={{ flex: 1 }}>
                   <h2 style={{ fontSize: '1.5rem', fontWeight: '700', color: '#1f2937', margin: '0 0 0.5rem 0', letterSpacing: '-0.01em' }}>Filtrera efter jobbtyp</h2>
@@ -330,8 +338,8 @@ export default function FardigaBatcharPage() {
                     padding: '1rem',
                     borderRadius: '0.75rem',
                     border: '2px solid',
-                    background: selectedJobType === 'product_texts' ? '#3b82f6' : 'white',
-                    borderColor: selectedJobType === 'product_texts' ? '#3b82f6' : '#e5e7eb',
+                    background: selectedJobType === 'product_texts' ? '#1d40b0' : 'white',
+                    borderColor: selectedJobType === 'product_texts' ? '#1d40b0' : '#e5e7eb',
                     color: selectedJobType === 'product_texts' ? 'white' : '#374151',
                     display: 'flex',
                     alignItems: 'center',
@@ -352,8 +360,8 @@ export default function FardigaBatcharPage() {
                     padding: '1rem',
                     borderRadius: '0.75rem',
                     border: '2px solid',
-                    background: selectedJobType === 'ui_strings' ? '#3b82f6' : 'white',
-                    borderColor: selectedJobType === 'ui_strings' ? '#3b82f6' : '#e5e7eb',
+                    background: selectedJobType === 'ui_strings' ? '#1d40b0' : 'white',
+                    borderColor: selectedJobType === 'ui_strings' ? '#1d40b0' : '#e5e7eb',
                     color: selectedJobType === 'ui_strings' ? 'white' : '#374151',
                     display: 'flex',
                     alignItems: 'center',
@@ -376,11 +384,11 @@ export default function FardigaBatcharPage() {
             <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.05) 0%, rgba(139, 92, 246, 0.05) 100%)', opacity: 0 }}></div>
             <div style={{ position: 'relative', zIndex: 1 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem', marginBottom: '2rem' }}>
-                <div style={{ position: 'relative', width: '3rem', height: '3rem', borderRadius: '50%', background: 'linear-gradient(135deg, #3b82f6, #1d4ed8)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <div style={{ position: 'relative', width: '3rem', height: '3rem', borderRadius: '50%', background: 'linear-gradient(135deg, #1d40b0, #1e3a8a)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                   <svg style={{ width: '1.5rem', height: '1.5rem', color: 'white' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                   </svg>
-                  <div style={{ position: 'absolute', top: '-0.5rem', right: '-0.5rem', width: '1.5rem', height: '1.5rem', background: 'white', border: '2px solid #3b82f6', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.75rem', fontWeight: '700', color: '#3b82f6' }}>2</div>
+                  <div style={{ position: 'absolute', top: '-0.5rem', right: '-0.5rem', width: '1.5rem', height: '1.5rem', background: 'white', border: '2px solid #1d40b0', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.75rem', fontWeight: '700', color: '#1d40b0' }}>2</div>
                 </div>
                 <div style={{ flex: 1 }}>
                   <h2 style={{ fontSize: '1.5rem', fontWeight: '700', color: '#1f2937', margin: '0 0 0.5rem 0', letterSpacing: '-0.01em' }}>Välj upload</h2>
@@ -421,7 +429,7 @@ export default function FardigaBatcharPage() {
                     onChange={(e) => handleUploadSelect(e.target.value)}
                     style={{ 
                       width: '100%', 
-                      padding: '0.75rem', 
+                      padding: '10px', 
                       border: '1px solid #d1d5db', 
                       borderRadius: '0.5rem', 
                       outline: 'none', 
@@ -458,11 +466,11 @@ export default function FardigaBatcharPage() {
               <div style={{ position: 'relative', zIndex: 1 }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '2rem' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
-                    <div style={{ position: 'relative', width: '3rem', height: '3rem', borderRadius: '50%', background: 'linear-gradient(135deg, #3b82f6, #1d4ed8)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    <div style={{ position: 'relative', width: '3rem', height: '3rem', borderRadius: '50%', background: 'linear-gradient(135deg, #1d40b0, #1e3a8a)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                       <svg style={{ width: '1.5rem', height: '1.5rem', color: 'white' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
                       </svg>
-                      <div style={{ position: 'absolute', top: '-0.5rem', right: '-0.5rem', width: '1.5rem', height: '1.5rem', background: 'white', border: '2px solid #3b82f6', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.75rem', fontWeight: '700', color: '#3b82f6' }}>3</div>
+                      <div style={{ position: 'absolute', top: '-0.5rem', right: '-0.5rem', width: '1.5rem', height: '1.5rem', background: 'white', border: '2px solid #1d40b0', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.75rem', fontWeight: '700', color: '#1d40b0' }}>3</div>
                     </div>
                     <div>
                       <h2 style={{ fontSize: '1.5rem', fontWeight: '700', color: '#1f2937', margin: '0 0 0.5rem 0', letterSpacing: '-0.01em' }}>Summering</h2>
@@ -518,11 +526,11 @@ export default function FardigaBatcharPage() {
               <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.05) 0%, rgba(139, 92, 246, 0.05) 100%)', opacity: 0 }}></div>
               <div style={{ position: 'relative', zIndex: 1 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem', marginBottom: '2rem' }}>
-                  <div style={{ position: 'relative', width: '3rem', height: '3rem', borderRadius: '50%', background: 'linear-gradient(135deg, #3b82f6, #1d4ed8)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  <div style={{ position: 'relative', width: '3rem', height: '3rem', borderRadius: '50%', background: 'linear-gradient(135deg, #1d40b0, #1e3a8a)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                     <svg style={{ width: '1.5rem', height: '1.5rem', color: 'white' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
                     </svg>
-                    <div style={{ position: 'absolute', top: '-0.5rem', right: '-0.5rem', width: '1.5rem', height: '1.5rem', background: 'white', border: '2px solid #3b82f6', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.75rem', fontWeight: '700', color: '#3b82f6' }}>4</div>
+                    <div style={{ position: 'absolute', top: '-0.5rem', right: '-0.5rem', width: '1.5rem', height: '1.5rem', background: 'white', border: '2px solid #1d40b0', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.75rem', fontWeight: '700', color: '#1d40b0' }}>4</div>
                   </div>
                   <div style={{ flex: 1 }}>
                     <h2 style={{ fontSize: '1.5rem', fontWeight: '700', color: '#1f2937', margin: '0 0 0.5rem 0', letterSpacing: '-0.01em' }}>
@@ -755,22 +763,28 @@ export default function FardigaBatcharPage() {
                   Detta kan inte ångras.
                 </p>
                 
-                <div style={{ display: 'flex', gap: '0.75rem' }}>
+                <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center' }}>
                   <button
                     onClick={handleDeleteUpload}
                     style={{
-                      background: '#dc2626',
+                      background: '#1d40b0',
                       color: 'white',
-                      padding: '0.5rem 1rem',
-                      borderRadius: '0.375rem',
                       border: 'none',
-                      fontSize: '0.875rem',
+                      padding: '0.75rem 1.5rem',
+                      borderRadius: '0.5rem',
                       fontWeight: '500',
+                      fontSize: '0.875rem',
                       cursor: 'pointer',
-                      transition: 'all 0.2s ease'
+                      transition: '0.2s'
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.background = '#1e3a8a'
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.background = '#1d40b0'
                     }}
                   >
-                    Radera
+                    🗑️ Radera
                   </button>
                   <button
                     onClick={() => {
@@ -780,16 +794,22 @@ export default function FardigaBatcharPage() {
                     style={{
                       background: '#6b7280',
                       color: 'white',
-                      padding: '0.5rem 1rem',
-                      borderRadius: '0.375rem',
                       border: 'none',
-                      fontSize: '0.875rem',
+                      padding: '0.75rem 1.5rem',
+                      borderRadius: '0.5rem',
                       fontWeight: '500',
+                      fontSize: '0.875rem',
                       cursor: 'pointer',
-                      transition: 'all 0.2s ease'
+                      transition: '0.2s'
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.background = '#4b5563'
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.background = '#6b7280'
                     }}
                   >
-                    Avbryt
+                    ✕ Avbryt
                   </button>
                 </div>
               </div>

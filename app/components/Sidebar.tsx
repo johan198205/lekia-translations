@@ -15,12 +15,6 @@ export default function Sidebar() {
 
   return (
     <div className="sidebar">
-      <div className="sidebar-header">
-        <div className="logo">
-          <div className="logo-placeholder">LEKIA</div>
-        </div>
-      </div>
-      
       <nav className="sidebar-nav">
         {navItems.map((item) => (
           <Link

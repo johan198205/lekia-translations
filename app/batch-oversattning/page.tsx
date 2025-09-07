@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import ProductDrawer from '../components/ProductDrawer'
 import ProgressBar from '../components/ProgressBar'
-import Wizard from '../components/Wizard'
+import Stepper from '../components/Stepper'
 import ModernStepCard from '../components/ModernStepCard'
 import ModernSummaryCard from '../components/ModernSummaryCard'
 import ModernRadioCard from '../components/ModernRadioCard'
@@ -1093,6 +1093,10 @@ function BatchOversattningContent() {
   const openDeleteModal = (type: 'upload', id: string, name: string) => {
     setDeleteTarget({ type, id, name })
     setShowDeleteModal(true)
+    // Scroll to bottom to show the modal
+    setTimeout(() => {
+      window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' })
+    }, 100)
   }
 
   const handleRegenerate = async () => {
@@ -1229,53 +1233,32 @@ function BatchOversattningContent() {
     }
   }
 
-  // Determine current step and step states
-  // No automatic step updates - we control steps manually
-  const steps = [
-    {
-      number: 1,
-      label: 'Välj källa',
-      isActive: currentStep === 1,
-      isCompleted: currentStep > 1
-    },
-    {
-      number: 2,
-      label: 'Välj rader & Skapa batch',
-      isActive: currentStep === 2,
-      isCompleted: currentStep > 2
-    },
-    {
-      number: 3,
-      label: jobType === 'product_texts' ? 'Optimera & Översätt' : 'Översätt',
-      isActive: currentStep === 3,
-      isCompleted: currentStep > 3
-    },
-    {
-      number: 4,
-      label: 'Exportera',
-      isActive: currentStep === 4,
-      isCompleted: false
-    }
+  // Define stepper steps according to requirements
+  const stepperSteps = [
+    { key: 'source', label: 'Välj källa' },
+    { key: 'select', label: 'Välj rader & Skapa batch' },
+    { key: 'optimize', label: 'Optimera & Översätt' },
+    { key: 'export', label: 'Exportera' },
   ]
 
   return (
-    <div style={{ flex: 1, padding: '2rem', background: 'linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%)', minHeight: 'calc(100vh - 80px)' }}>
+    <div style={{ flex: 1, padding: '2rem', background: '#fcfbf7', minHeight: 'calc(100vh - 80px)' }}>
       <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
-        <div style={{ background: 'white', borderRadius: '1rem', padding: '2rem', marginBottom: '2rem', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)', border: '1px solid #e5e7eb', textAlign: 'center' }}>
-          <h1 style={{ fontSize: '2rem', fontWeight: '700', color: '#111827', margin: '0 0 0.5rem 0' }}>
-            {jobType === 'product_texts' ? 'Produktöversättning' : 'UI-element Översättning'}
+        <div className="start-header" style={{ marginBottom: '4rem' }}>
+          <h1 className="start-title">
+            Optimering & översättning
           </h1>
-          <p style={{ fontSize: '1.125rem', color: '#6b7280', margin: '0' }}>
+          <p className="start-subtitle">
             {jobType === 'product_texts' ? 'Optimerar och översätter produkttexter' : 'Översätter UI-element och webbplatstexter'}
           </p>
         </div>
         
-        <Wizard 
-          title=""
+        <Stepper 
           currentStep={currentStep}
-          totalSteps={4}
-          steps={steps}
-        >
+          steps={stepperSteps}
+        />
+        
+        <div className="wizard-content">
         {/* Step 1: Source Selection - Only show if currentStep === 1 */}
         {currentStep === 1 && (
           <ModernStepCard
@@ -1311,7 +1294,7 @@ function BatchOversattningContent() {
           <div className="space-y-4">
             {/* Jobbtyp-val */}
             <div className="space-y-2">
-              <label htmlFor="jobTypeSelect" className="block text-sm font-medium text-gray-700">
+              <label htmlFor="jobTypeSelect" className="block text-sm font-medium text-gray-700" style={{ marginRight: '10px' }}>
                 Jobbtyp:
               </label>
               <select
@@ -1319,7 +1302,8 @@ function BatchOversattningContent() {
                 name="jobType"
                 value={jobType}
                 onChange={(e) => handleJobTypeChange(e.target.value as 'product_texts' | 'ui_strings')}
-                className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md"
+                className="mt-1 block w-full pl-3 pr-10 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md"
+                style={{ padding: '10px' }}
               >
                 <option value="product_texts">Produkttexter (befintligt)</option>
                 <option value="ui_strings">UI-element / Webbplatstexter (NY)</option>
@@ -1429,7 +1413,7 @@ function BatchOversattningContent() {
             {/* Batch selection for existing uploads */}
             {sourceType === 'existing' && selectedUpload && availableBatches.length > 0 && (
               <div className="space-y-2">
-                <label htmlFor="batchSelect" className="block text-sm font-medium text-gray-700">
+                <label htmlFor="batchSelect" className="block text-sm font-medium text-gray-700" style={{ marginRight: '10px' }}>
                   Välj befintlig batch:
                 </label>
                 <select
@@ -1441,7 +1425,8 @@ function BatchOversattningContent() {
                       handleBatchSelect(batch)
                     }
                   }}
-                  className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md"
+                  className="mt-1 block w-full pl-3 pr-10 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md"
+                style={{ padding: '10px' }}
                 >
                   <option value="">-- Välj batch --</option>
                   {availableBatches.map((batch) => (
@@ -2013,21 +1998,53 @@ function BatchOversattningContent() {
                 Detta kommer också att radera alla relaterade batchar och produkter/UI-element.
               </p>
               
-              <div className="flex gap-3">
+              <div className="flex gap-4 justify-center">
                 <button
                   onClick={handleDeleteUpload}
-                  className="bg-red-600 text-white px-4 py-2 rounded-md hover:bg-red-700"
+                  style={{
+                    background: '#1d40b0',
+                    color: 'white',
+                    border: 'none',
+                    padding: '0.75rem 1.5rem',
+                    borderRadius: '0.5rem',
+                    fontWeight: '500',
+                    fontSize: '0.875rem',
+                    cursor: 'pointer',
+                    transition: '0.2s'
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = '#1e3a8a'
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = '#1d40b0'
+                  }}
                 >
-                  Radera
+                  🗑️ Radera
                 </button>
                 <button
                   onClick={() => {
                     setShowDeleteModal(false)
                     setDeleteTarget(null)
                   }}
-                  className="bg-gray-600 text-white px-4 py-2 rounded-md hover:bg-gray-700"
+                  style={{
+                    background: '#6b7280',
+                    color: 'white',
+                    border: 'none',
+                    padding: '0.75rem 1.5rem',
+                    borderRadius: '0.5rem',
+                    fontWeight: '500',
+                    fontSize: '0.875rem',
+                    cursor: 'pointer',
+                    transition: '0.2s'
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = '#4b5563'
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = '#6b7280'
+                  }}
                 >
-                  Avbryt
+                  ✕ Avbryt
                 </button>
               </div>
             </div>
@@ -2042,7 +2059,7 @@ function BatchOversattningContent() {
           onClose={handleDrawerClose}
           onSave={handleSave}
         />
-        </Wizard>
+        </div>
       </div>
     </div>
   )
