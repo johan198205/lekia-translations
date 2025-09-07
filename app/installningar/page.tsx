@@ -31,6 +31,7 @@ export default function InstallningarPage() {
     exampleProductImportTokens: null,
     translationLanguages: null,
     originalLanguage: null,
+    glossary: null,
     updatedAt: null
   });
   
