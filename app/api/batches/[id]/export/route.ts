@@ -382,7 +382,9 @@ export async function GET(
           'Content-Disposition': `attachment; filename="${batch.filename}_export.xlsx"`
         }
       })
-    } else {
+    }
+    
+    if (batch.job_type === 'ui_items' || batch.job_type === 'ui_strings') {
       // Export UI items
       const workbook = new ExcelJS.Workbook()
       const worksheet = workbook.addWorksheet('UI-element')
@@ -463,7 +465,9 @@ export async function GET(
           'Content-Disposition': `attachment; filename="${batch.filename}_ui_export.xlsx"`
         }
       })
-    } else if (batch.job_type === 'brands') {
+    }
+    
+    if (batch.job_type === 'brands') {
       // Export brands
       const workbook = new ExcelJS.Workbook()
       const worksheet = workbook.addWorksheet('Varumärken')
@@ -724,6 +728,12 @@ export async function GET(
         }
       })
     }
+    
+    // If no job_type matches, return error
+    return NextResponse.json(
+      { error: 'Unsupported job type for export' },
+      { status: 400 }
+    )
   } catch (error) {
     console.error('Export error:', error)
     return NextResponse.json(
