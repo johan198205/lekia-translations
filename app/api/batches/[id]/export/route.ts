@@ -119,18 +119,14 @@ export async function GET(
       const workbook = new ExcelJS.Workbook()
       const worksheet = workbook.addWorksheet('Produkter')
       
-      // Get translation languages from settings
+      // Get translation languages from batch
       let translationLanguages: string[] = []
-      try {
-        const settingsResponse = await fetch(`${process.env.NEXTAUTH_URL || 'http://localhost:3000'}/api/settings/openai`)
-        if (settingsResponse.ok) {
-          const settingsData = await settingsResponse.json()
-          if (settingsData.translationLanguages) {
-            translationLanguages = JSON.parse(settingsData.translationLanguages)
-          }
+      if (batch.targetLanguages) {
+        try {
+          translationLanguages = JSON.parse(batch.targetLanguages)
+        } catch (error) {
+          console.warn('Failed to parse batch targetLanguages for export:', error)
         }
-      } catch (error) {
-        console.warn('Failed to load translation languages for export:', error)
       }
       
       // Use raw_data from first product to determine original structure
@@ -389,44 +385,83 @@ export async function GET(
       const workbook = new ExcelJS.Workbook()
       const worksheet = workbook.addWorksheet('UI-element')
       
-      // Get original locale structure from upload metadata
-      let originalLocales: string[] = []
-      try {
-        if (batch.upload && batch.upload.meta) {
-          const metaData = JSON.parse(batch.upload.meta)
-          if (metaData.locales) {
-            originalLocales = metaData.locales
-          }
+      // Get all locales from UI items to preserve all original columns
+      const allLocales = new Set<string>()
+      batch.ui_items.forEach(item => {
+        try {
+          const values = JSON.parse(item.values)
+          Object.keys(values).forEach(locale => {
+            if (locale !== '__original_row_number__') {
+              allLocales.add(locale)
+            }
+          })
+        } catch (error) {
+          console.warn('Failed to parse UI item values:', error)
         }
-      } catch (error) {
-        console.warn('Failed to parse upload metadata for locales:', error)
+      })
+      const originalLocales = Array.from(allLocales).sort()
+
+      // Get target languages from batch
+      let targetLanguages: string[] = []
+      if (batch.targetLanguages) {
+        try {
+          targetLanguages = JSON.parse(batch.targetLanguages)
+        } catch (error) {
+          console.warn('Failed to parse batch targetLanguages for export:', error)
+        }
       }
 
-      // Fallback: get locales from UI items if metadata not available
-      if (originalLocales.length === 0) {
-        const allLocales = new Set<string>()
-        batch.ui_items.forEach(item => {
-          try {
-            const values = JSON.parse(item.values)
-            Object.keys(values).forEach(locale => {
-              if (locale !== '__original_row_number__') {
-                allLocales.add(locale)
-              }
-            })
-          } catch (error) {
-            console.warn('Failed to parse UI item values:', error)
-          }
-        })
-        originalLocales = Array.from(allLocales).sort()
-      }
+      // Create a mapping from language codes to existing locale column names
+      const languageToLocaleMap: Record<string, string> = {}
+      
+      // First, map target languages to existing locales if they exist
+      targetLanguages.forEach(langCode => {
+        // Try to find exact match first
+        const exactMatch = originalLocales.find(locale => 
+          locale.toLowerCase() === `${langCode}-${langCode.toUpperCase()}`
+        )
+        if (exactMatch) {
+          languageToLocaleMap[langCode] = exactMatch
+          return
+        }
+        
+        // Try to find partial match (e.g., 'nb' matches 'nb-No' or 'nb-NO')
+        const partialMatch = originalLocales.find(locale => 
+          locale.toLowerCase().startsWith(`${langCode}-`)
+        )
+        if (partialMatch) {
+          languageToLocaleMap[langCode] = partialMatch
+          return
+        }
+        
+        // If no existing locale found, create new one
+        const newLocale = `${langCode}-${langCode.toUpperCase()}`
+        languageToLocaleMap[langCode] = newLocale
+      })
+
+      // Build final locale list: existing locales + new ones for target languages
+      const finalLocales: string[] = []
+      
+      // Add all original locales first (to preserve order)
+      originalLocales.forEach(locale => {
+        finalLocales.push(locale)
+      })
+      
+      // Add new locales for target languages that don't exist
+      targetLanguages.forEach(langCode => {
+        const mappedLocale = languageToLocaleMap[langCode]
+        if (!originalLocales.includes(mappedLocale)) {
+          finalLocales.push(mappedLocale)
+        }
+      })
       
       // Add headers
       const columns = [
         { header: 'Name', key: 'name', width: 30 }
       ]
       
-      // Add locale columns in original order
-      originalLocales.forEach(locale => {
+      // Add locale columns in final order (original + new)
+      finalLocales.forEach(locale => {
         columns.push({ header: locale, key: locale, width: 40 })
       })
       
@@ -440,16 +475,31 @@ export async function GET(
             name: item.name
           }
           
-          // Add each locale value in original column order
-          originalLocales.forEach(locale => {
-            row[locale] = values[locale] || ''
+          // Add each locale value in final column order
+          finalLocales.forEach(locale => {
+            // Check if this locale exists in the original data
+            if (values[locale] !== undefined) {
+              row[locale] = values[locale] || ''
+            } else {
+              // For new locales, try to find data using language mapping
+              const langCode = targetLanguages.find(lang => 
+                languageToLocaleMap[lang] === locale
+              )
+              if (langCode) {
+                // Try to find data in the mapped locale format
+                const mappedLocale = languageToLocaleMap[langCode]
+                row[locale] = values[mappedLocale] || ''
+              } else {
+                row[locale] = ''
+              }
+            }
           })
           
           worksheet.addRow(row)
         } catch (error) {
           console.warn('Failed to parse UI item values for export:', error)
           const row: any = { name: item.name }
-          originalLocales.forEach(locale => {
+          finalLocales.forEach(locale => {
             row[locale] = ''
           })
           worksheet.addRow(row)
@@ -472,18 +522,14 @@ export async function GET(
       const workbook = new ExcelJS.Workbook()
       const worksheet = workbook.addWorksheet('Varumärken')
       
-      // Get translation languages from settings
+      // Get translation languages from batch
       let translationLanguages: string[] = []
-      try {
-        const settingsResponse = await fetch(`${process.env.NEXTAUTH_URL || 'http://localhost:3000'}/api/settings/openai`)
-        if (settingsResponse.ok) {
-          const settingsData = await settingsResponse.json()
-          if (settingsData.translationLanguages) {
-            translationLanguages = JSON.parse(settingsData.translationLanguages)
-          }
+      if (batch.targetLanguages) {
+        try {
+          translationLanguages = JSON.parse(batch.targetLanguages)
+        } catch (error) {
+          console.warn('Failed to parse batch targetLanguages for export:', error)
         }
-      } catch (error) {
-        console.warn('Failed to load translation languages for export:', error)
       }
       
       // Use raw_data from first brand to determine original structure

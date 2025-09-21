@@ -55,6 +55,12 @@ interface UploadSummary {
   optimizedCount: number
   translationCounts: Record<string, number>
   translationLanguages: string[]
+  batches: Array<{
+    id: string
+    filename: string
+    created_at: string
+    targetLanguages: string[]
+  }>
 }
 
 export default function FardigaBatcharPage() {
@@ -513,6 +519,78 @@ export default function FardigaBatcharPage() {
                     <div key={lang} style={{ background: '#f8fafc', padding: '1rem', borderRadius: '0.5rem', border: '1px solid #e2e8f0' }}>
                       <div style={{ fontSize: '0.875rem', color: '#6b7280', marginBottom: '0.25rem' }}>Översatta ({lang.toUpperCase()})</div>
                       <div style={{ fontSize: '1.5rem', fontWeight: '700', color: '#1f2937' }}>{uploadSummary.translationCounts[lang] || 0}/{uploadSummary.totalRows}</div>
+                    </div>
+                  ))}
+                  {uploadSummary.translationLanguages.length === 0 && (
+                    <div style={{ background: '#fef3c7', padding: '1rem', borderRadius: '0.5rem', border: '1px solid #fbbf24', gridColumn: '1 / -1' }}>
+                      <div style={{ fontSize: '0.875rem', color: '#92400e', marginBottom: '0.25rem' }}>⚠️ Inga språk valda</div>
+                      <div style={{ fontSize: '0.875rem', color: '#92400e' }}>Inga språk har valts för översättning i denna upload</div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Batch information */}
+          {selectedUpload && uploadSummary && uploadSummary.batches && uploadSummary.batches.length > 0 && (
+            <div style={{ background: 'white', borderRadius: '1.5rem', padding: '2rem', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)', border: '2px solid transparent', transition: 'all 0.3s ease', position: 'relative', overflow: 'hidden' }}>
+              <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.05) 0%, rgba(139, 92, 246, 0.05) 100%)', opacity: 0 }}></div>
+              <div style={{ position: 'relative', zIndex: 1 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem', marginBottom: '2rem' }}>
+                  <div style={{ position: 'relative', width: '3rem', height: '3rem', borderRadius: '50%', background: 'linear-gradient(135deg, #1d40b0, #1e3a8a)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    <svg style={{ width: '1.5rem', height: '1.5rem', color: 'white' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                    </svg>
+                    <div style={{ position: 'absolute', top: '-0.5rem', right: '-0.5rem', width: '1.5rem', height: '1.5rem', background: 'white', border: '2px solid #1d40b0', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.75rem', fontWeight: '700', color: '#1d40b0' }}>{uploadSummary.batches.length}</div>
+                  </div>
+                  <div>
+                    <h2 style={{ fontSize: '1.5rem', fontWeight: '700', color: '#1f2937', margin: '0 0 0.5rem 0', letterSpacing: '-0.01em' }}>Batch-information</h2>
+                    <p style={{ color: '#6b7280', lineHeight: '1.6', margin: '0', fontSize: '1rem' }}>Språkval och batch-detaljer</p>
+                  </div>
+                </div>
+                
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                  {uploadSummary.batches.map((batch, index) => (
+                    <div key={batch.id} style={{ background: '#f8fafc', padding: '1rem', borderRadius: '0.5rem', border: '1px solid #e2e8f0' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.5rem' }}>
+                        <div>
+                          <div style={{ fontSize: '0.875rem', fontWeight: '600', color: '#1f2937' }}>
+                            Batch {index + 1}: {batch.filename}
+                          </div>
+                          <div style={{ fontSize: '0.75rem', color: '#6b7280' }}>
+                            Skapad: {new Date(batch.created_at).toLocaleString('sv-SE')}
+                          </div>
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', alignItems: 'center' }}>
+                        <span style={{ fontSize: '0.75rem', color: '#6b7280', marginRight: '0.5rem' }}>Språk:</span>
+                        {batch.targetLanguages.length > 0 ? (
+                          batch.targetLanguages.map(lang => (
+                            <span key={lang} style={{ 
+                              background: '#dbeafe', 
+                              color: '#1e40af', 
+                              padding: '0.25rem 0.5rem', 
+                              borderRadius: '0.25rem', 
+                              fontSize: '0.75rem', 
+                              fontWeight: '500' 
+                            }}>
+                              {lang.toUpperCase()}
+                            </span>
+                          ))
+                        ) : (
+                          <span style={{ 
+                            background: '#fef3c7', 
+                            color: '#92400e', 
+                            padding: '0.25rem 0.5rem', 
+                            borderRadius: '0.25rem', 
+                            fontSize: '0.75rem', 
+                            fontWeight: '500' 
+                          }}>
+                            Inga språk valda
+                          </span>
+                        )}
+                      </div>
                     </div>
                   ))}
                 </div>

@@ -164,6 +164,8 @@ function BatchOversattningContent() {
   const [translationLanguages, setTranslationLanguages] = useState<string[]>([])
   const [optimizeSv, setOptimizeSv] = useState<boolean>(false)
   const [selectedTargetLangs, setSelectedTargetLangs] = useState<string[]>([])
+  const [batchTargetLanguages, setBatchTargetLanguages] = useState<string[]>([])
+  const [requiredLanguages, setRequiredLanguages] = useState<string[]>([])
   const [drawerProduct, setDrawerProduct] = useState<Product | null>(null)
   const [drawerField, setDrawerField] = useState<'description_sv' | 'optimized_sv' | 'translated_no' | 'translated_da' | 'translated_en' | 'translated_de' | 'translated_fr' | 'translated_es' | 'translated_it' | 'translated_pt' | 'translated_nl' | 'translated_pl' | 'translated_ru' | 'translated_fi' | null>(null)
   const [isDrawerOpen, setIsDrawerOpen] = useState(false)
@@ -229,21 +231,8 @@ function BatchOversattningContent() {
           setBatches(batchesData)
         }
 
-        // Load translation languages from settings
-        const settingsResponse = await fetch('/api/settings/openai')
-        if (settingsResponse.ok) {
-          const settingsData = await settingsResponse.json()
-          if (settingsData.translationLanguages) {
-            try {
-              const parsed = JSON.parse(settingsData.translationLanguages)
-              if (Array.isArray(parsed)) {
-                setTranslationLanguages(parsed)
-              }
-            } catch (error) {
-              console.warn('Failed to parse translation languages:', error)
-            }
-          }
-        }
+        // Set available translation languages (no longer from settings)
+        setTranslationLanguages(['da', 'nb', 'no', 'en', 'de', 'fr', 'es', 'it', 'pt', 'nl', 'pl', 'ru', 'fi'])
       } catch (err) {
         console.error('Failed to load data:', err)
       }
@@ -350,6 +339,18 @@ function BatchOversattningContent() {
     // If no batches exist for this upload, load items directly
     if (uploadBatches.length === 0) {
       try {
+        // Load upload metadata first
+        const metaResponse = await fetch(`/api/uploads/${upload.id}/meta`)
+        let detectedLanguages: string[] = []
+        if (metaResponse.ok) {
+          const metaData = await metaResponse.json()
+          detectedLanguages = metaData.meta?.detectedLanguages || []
+          setRequiredLanguages(detectedLanguages)
+          // Auto-select detected languages (but exclude Swedish as it's the source language)
+          const targetLanguages = detectedLanguages.filter(lang => lang !== 'sv')
+          setBatchTargetLanguages(targetLanguages)
+        }
+
         const endpoint = upload.job_type === 'product_texts' 
           ? `/api/uploads/${upload.id}/products`
           : `/api/uploads/${upload.id}/ui-items`
@@ -365,7 +366,8 @@ function BatchOversattningContent() {
             setParsedUIStrings(data.uiItems)
             setProductsCount(data.uiItems.length)
             setSelectedIds(new Set(data.uiItems.map((_: any, index: number) => index)))
-            setUploadAlert(`✅ Upload vald: ${upload.filename} (${data.uiItems.length} UI-element)`)
+            const detectedText = detectedLanguages.length > 0 ? `. Upptäckta språk: ${detectedLanguages.join(', ')}` : ''
+            setUploadAlert(`✅ Upload vald: ${upload.filename} (${data.uiItems.length} UI-element)${detectedText}`)
           }
           setPhase('uploaded')
           setCurrentStep(2)
@@ -410,6 +412,59 @@ function BatchOversattningContent() {
           setUploadAlert(`✅ Batch vald: ${batch.filename} (${uiItems.length} UI-element)`)
         }
         setBatchId(batch.id)
+        
+        // Load target languages from batch
+        if (data.targetLanguages) {
+          try {
+            const targetLangs = JSON.parse(data.targetLanguages)
+            setSelectedTargetLangs(targetLangs)
+          } catch (error) {
+            console.warn('Failed to parse batch targetLanguages:', error)
+            setSelectedTargetLangs([])
+          }
+        } else {
+          // Fallback for old batches without targetLanguages - detect from existing translations
+          console.warn('Batch has no targetLanguages, detecting from existing translations')
+          
+          // Detect languages from existing translations in the data
+          const detectedLanguages = new Set<string>()
+          
+          if (batch.job_type === 'product_texts' && data.products) {
+            // Check product translations
+            data.products.forEach((product: any) => {
+              const translationFields = ['translated_da', 'translated_nb', 'translated_no', 'translated_en', 'translated_de', 'translated_fr', 'translated_es', 'translated_it', 'translated_pt', 'translated_nl', 'translated_pl', 'translated_ru', 'translated_fi']
+              translationFields.forEach(field => {
+                if (product[field] && product[field].trim()) {
+                  const langCode = field.replace('translated_', '')
+                  detectedLanguages.add(langCode)
+                }
+              })
+            })
+          } else if (batch.job_type === 'ui_strings' && data.ui_items) {
+            // Check UI item translations
+            data.ui_items.forEach((item: any) => {
+              try {
+                const values = JSON.parse(item.values)
+                Object.keys(values).forEach(key => {
+                  if (key !== 'sv' && values[key] && values[key].trim()) {
+                    detectedLanguages.add(key)
+                  }
+                })
+              } catch (error) {
+                console.warn('Failed to parse UI item values:', error)
+              }
+            })
+          }
+          
+          const detectedLangs = Array.from(detectedLanguages).sort()
+          if (detectedLangs.length > 0) {
+            setSelectedTargetLangs(detectedLangs)
+            console.log('Detected languages from existing translations:', detectedLangs)
+          } else {
+            setSelectedTargetLangs(['da', 'nb', 'no']) // Ultimate fallback
+          }
+        }
+        
         setPhase('readyToExport') // Skip to ready state since batch already exists
         setCurrentStep(3) // Advance to step 3: Optimize & Translate
       } else {
@@ -456,7 +511,15 @@ function BatchOversattningContent() {
           setPhase('uploaded')
           setCurrentStep(2)
           const locales = data.meta?.locales || []
-          setUploadAlert(`✅ Fil uppladdad! ${data.uiStrings.length} UI-element hittades. Språk: ${locales.join(', ')}`)
+          const detectedLanguages = data.meta?.detectedLanguages || []
+          
+          // Set detected languages
+          setRequiredLanguages(detectedLanguages)
+          // Auto-select detected languages (but exclude Swedish as it's the source language)
+          const targetLanguages = detectedLanguages.filter(lang => lang !== 'sv')
+          setBatchTargetLanguages(targetLanguages)
+          
+          setUploadAlert(`✅ Fil uppladdad! ${data.uiStrings.length} UI-element hittades. Upptäckta språk: ${locales.join(', ')}. Välj vilka språk du vill översätta.`)
         } else if (jobType === 'brands' && data.brands) {
           setProductsCount(data.brands.length)
           setParsedBrands(data.brands)
@@ -516,7 +579,8 @@ function BatchOversattningContent() {
         body: JSON.stringify({
           upload_id: uploadId,
           job_type: jobType,
-          selected_ids: selectedItemIds
+          selected_ids: selectedItemIds,
+          target_languages: batchTargetLanguages
         })
       })
 
@@ -552,6 +616,16 @@ function BatchOversattningContent() {
               setParsedUIStrings(uiItems)
               // Set selectedIds to include all UI items in the batch
               setSelectedIds(new Set(uiItems.map((_: any, index: number) => index)))
+            }
+            
+            // Set target languages from batch
+            if (batchData.targetLanguages) {
+              try {
+                const targetLangs = JSON.parse(batchData.targetLanguages)
+                setSelectedTargetLangs(targetLangs)
+              } catch (error) {
+                console.warn('Failed to parse batch targetLanguages:', error)
+              }
             }
           }
         } catch (err) {
@@ -1621,9 +1695,59 @@ function BatchOversattningContent() {
               await handleCreateBatch()
               // setCurrentStep(3) is now handled inside handleCreateBatch
             }}
-            ctaDisabled={selectedIds.size === 0}
+            ctaDisabled={selectedIds.size === 0 || batchTargetLanguages.length === 0}
           >
             <div className="space-y-4">
+              {/* Language Selection */}
+              <div className="bg-gray-50 p-4 rounded-lg border">
+                <h4 className="text-md font-medium text-gray-700 mb-3">
+                  Välj språk för översättning
+                </h4>
+                {requiredLanguages.length > 0 && (
+                  <div className="mb-3 p-2 bg-blue-50 border border-blue-200 rounded text-sm">
+                    <p className="text-blue-800 font-medium">📋 Upptäckta språk i filen:</p>
+                    <p className="text-blue-700">{requiredLanguages.map(lang => codeToCountry(lang).display).join(', ')}</p>
+                    {requiredLanguages.includes('sv') && (
+                      <p className="text-green-700 text-xs mt-1">🇸🇪 Svenska används som källspråk för översättningen</p>
+                    )}
+                    <p className="text-blue-600 text-xs mt-1">Andra språk är automatiskt markerade men kan avmarkeras. Välj vilka du vill översätta till.</p>
+                  </div>
+                )}
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+                  {translationLanguages.map((langCode) => {
+                    const isRequired = requiredLanguages.includes(langCode)
+                    return (
+                      <div key={langCode} className="flex items-center space-x-2">
+                        <input
+                          type="checkbox"
+                          id={`batch-lang-${langCode}`}
+                          checked={batchTargetLanguages.includes(langCode)}
+                          onChange={() => {
+                            if (batchTargetLanguages.includes(langCode)) {
+                              setBatchTargetLanguages(batchTargetLanguages.filter(l => l !== langCode))
+                            } else {
+                              setBatchTargetLanguages([...batchTargetLanguages, langCode])
+                            }
+                          }}
+                          className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                        />
+                        <label 
+                          htmlFor={`batch-lang-${langCode}`} 
+                          className="text-sm flex items-center space-x-1 cursor-pointer text-gray-700"
+                        >
+                          <span className="text-lg">{codeToCountry(langCode).emoji}</span>
+                          <span>{codeToCountry(langCode).display}</span>
+                          {isRequired && <span className="text-xs text-blue-600 font-medium">(i filen)</span>}
+                        </label>
+                      </div>
+                    )
+                  })}
+                </div>
+                {batchTargetLanguages.length === 0 && (
+                  <p className="text-sm text-amber-600 mt-2">⚠️ Välj minst ett språk för översättning</p>
+                )}
+              </div>
+
               <div className="flex justify-between items-center">
                 <h3 className="text-lg font-medium">
                   Välj {jobType === 'product_texts' ? 'produkter' : jobType === 'ui_strings' ? 'UI-element' : 'varumärken'} ({selectedIds.size} av {jobType === 'product_texts' ? parsedProducts.length : jobType === 'ui_strings' ? parsedUIStrings.length : parsedBrands.length})
@@ -1769,6 +1893,19 @@ function BatchOversattningContent() {
               isCompleted={currentStep > 3}
             >
             <div className="space-y-6">
+              {/* Back to language selection button */}
+              <div className="flex justify-start mb-4">
+                <button
+                  onClick={() => setCurrentStep(2)}
+                  className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-4 rounded-lg flex items-center space-x-3 transition-colors text-base"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                  </svg>
+                  <span>Tillbaka till språkval</span>
+                </button>
+              </div>
+              
               {jobType === 'product_texts' && (
                 <div className="space-y-4">
                   {/* Optimize Swedish checkbox */}
@@ -1786,34 +1923,27 @@ function BatchOversattningContent() {
                     </label>
                   </div>
 
-                  {/* Language selection checkboxes */}
+                  {/* Selected languages display */}
                   <div className="space-y-4">
                     <label className="text-lg font-medium text-gray-700">
-                      Välj språk att översätta till:
+                      Valda språk för översättning:
                     </label>
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                      {translationLanguages.map((langCode) => (
-                        <div key={langCode} className="flex items-center space-x-4 p-4 bg-gray-50 rounded-lg border hover:bg-gray-100 transition-colors">
-                          <input
-                            type="checkbox"
-                            id={`lang-${langCode}`}
-                            checked={selectedTargetLangs.includes(langCode)}
-                            onChange={() => handleTargetLangChange(langCode)}
-                            className="h-6 w-6 text-blue-600 focus:ring-blue-500 border-gray-300 rounded cursor-pointer"
-                          />
-                          <label 
-                            htmlFor={`lang-${langCode}`} 
-                            className="text-base text-gray-700 flex items-center space-x-3 cursor-pointer"
-                          >
+                      {selectedTargetLangs.map((langCode) => (
+                        <div key={langCode} className="flex items-center space-x-4 p-4 bg-blue-50 rounded-lg border border-blue-200">
+                          <div className="flex items-center space-x-3">
                             <span className="text-3xl">{codeToCountry(langCode).emoji}</span>
                             <div className="flex flex-col">
-                              <span className="font-semibold text-lg">{codeToCountry(langCode).display}</span>
-                              <span className="text-sm text-gray-500">({langCode.toUpperCase()})</span>
+                              <span className="font-semibold text-lg text-blue-800">{codeToCountry(langCode).display}</span>
+                              <span className="text-sm text-blue-600">({langCode.toUpperCase()})</span>
                             </div>
-                          </label>
+                          </div>
                         </div>
                       ))}
                     </div>
+                    {selectedTargetLangs.length === 0 && (
+                      <p className="text-sm text-amber-600">⚠️ Inga språk valda för översättning</p>
+                    )}
                   </div>
 
                 </div>
@@ -1821,33 +1951,45 @@ function BatchOversattningContent() {
 
               {jobType === 'ui_strings' && (
                 <div className="space-y-4">
-                  {/* Language selection checkboxes for UI strings */}
+                  {/* Source and target languages display for UI strings */}
                   <div className="space-y-4">
-                    <label className="text-lg font-medium text-gray-700">
-                      Välj språk att översätta till:
-                    </label>
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                      {translationLanguages.map((langCode) => (
-                        <div key={langCode} className="flex items-center space-x-4 p-4 bg-gray-50 rounded-lg border hover:bg-gray-100 transition-colors">
-                          <input
-                            type="checkbox"
-                            id={`ui-lang-${langCode}`}
-                            checked={selectedTargetLangs.includes(langCode)}
-                            onChange={() => handleTargetLangChange(langCode)}
-                            className="h-6 w-6 text-blue-600 focus:ring-blue-500 border-gray-300 rounded cursor-pointer"
-                          />
-                          <label 
-                            htmlFor={`ui-lang-${langCode}`} 
-                            className="text-base text-gray-700 flex items-center space-x-3 cursor-pointer"
-                          >
-                            <span className="text-3xl">{codeToCountry(langCode).emoji}</span>
-                            <div className="flex flex-col">
-                              <span className="font-semibold text-lg">{codeToCountry(langCode).display}</span>
-                              <span className="text-sm text-gray-500">({langCode.toUpperCase()})</span>
-                            </div>
-                          </label>
+                    {/* Source language */}
+                    <div className="space-y-2">
+                      <label className="text-lg font-medium text-gray-700">
+                        Källspråk:
+                      </label>
+                      <div className="flex items-center space-x-4 p-4 bg-green-50 rounded-lg border border-green-200">
+                        <div className="flex items-center space-x-3">
+                          <span className="text-3xl">🇸🇪</span>
+                          <div className="flex flex-col">
+                            <span className="font-semibold text-lg text-green-800">Svenska</span>
+                            <span className="text-sm text-green-600">(SV) - Används som grund för översättning</span>
+                          </div>
                         </div>
-                      ))}
+                      </div>
+                    </div>
+                    
+                    {/* Target languages */}
+                    <div className="space-y-2">
+                      <label className="text-lg font-medium text-gray-700">
+                        Målsspråk för översättning:
+                      </label>
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                        {selectedTargetLangs.map((langCode) => (
+                          <div key={langCode} className="flex items-center space-x-4 p-4 bg-blue-50 rounded-lg border border-blue-200">
+                            <div className="flex items-center space-x-3">
+                              <span className="text-3xl">{codeToCountry(langCode).emoji}</span>
+                              <div className="flex flex-col">
+                                <span className="font-semibold text-lg text-blue-800">{codeToCountry(langCode).display}</span>
+                                <span className="text-sm text-blue-600">({langCode.toUpperCase()})</span>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                      {selectedTargetLangs.length === 0 && (
+                        <p className="text-sm text-amber-600">⚠️ Inga målsspråk valda för översättning</p>
+                      )}
                     </div>
                   </div>
 
@@ -1903,7 +2045,7 @@ function BatchOversattningContent() {
                   </h3>
                   
                   {/* Urvalsknappar */}
-                  <div className="flex flex-wrap gap-2 mb-4">
+                  <div className="flex flex-wrap gap-2 mb-8">
                     <button
                       onClick={handleSelectAll}
                       className="bg-blue-600 text-white px-3 py-1 rounded-md hover:bg-blue-700 text-sm"
@@ -1921,12 +2063,12 @@ function BatchOversattningContent() {
                       disabled={!batchId || selectedIds.size === 0 || (!optimizeSv && selectedTargetLangs.length === 0)}
                       className="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-sm font-medium"
                     >
-                      🚀 Kör bearbetning
+                      🚀 Kör översättning
                     </button>
                     <button
                       onClick={handleExport}
                       disabled={!batchId}
-                      className="bg-emerald-600 text-white px-4 py-2 rounded-md hover:bg-emerald-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-sm font-medium"
+                      className="bg-orange-600 text-white px-4 py-2 rounded-md hover:bg-orange-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-sm font-medium"
                     >
                       📊 Exportera Excel
                     </button>
@@ -1937,7 +2079,7 @@ function BatchOversattningContent() {
                     )}
                     {selectedIds.size > 0 && !optimizeSv && selectedTargetLangs.length === 0 && (
                       <span className="text-sm text-gray-500 flex items-center">
-                        Välj "Optimera svenska först" eller minst ett språk att översätta till
+                        Välj "Optimera svenska först" eller skapa en batch med språk valda
                       </span>
                     )}
                   </div>
@@ -1960,7 +2102,7 @@ function BatchOversattningContent() {
                               <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">PRODUKTNAMN</th>
                               <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">BESKRIVNING (SV)</th>
                               <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">OPTIMERAD TEXT (SV)</th>
-                              {translationLanguages.map((langCode) => (
+                              {selectedTargetLangs.map((langCode) => (
                                 <th key={langCode} className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                   OPTIMERAD TEXT ({langCode.toUpperCase()})
                                 </th>
@@ -1973,7 +2115,7 @@ function BatchOversattningContent() {
                               <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">BESKRIVNING (SV)</th>
                               <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">KORT BESKRIVNING (SV)</th>
                               <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">LÅNG BESKRIVNING HTML (SV)</th>
-                              {translationLanguages.map((langCode) => (
+                              {selectedTargetLangs.map((langCode) => (
                                 <th key={langCode} className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                   KORT BESKRIVNING ({langCode.toUpperCase()})
                                 </th>
@@ -1983,10 +2125,12 @@ function BatchOversattningContent() {
                           ) : (
                             <>
                               <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">NAMN</th>
-                              {/* Show all available locales from translationLanguages */}
-                              {translationLanguages.map((langCode) => {
+                              <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">KÄLLA (SV-SE)</th>
+                              {/* Show only selected target languages */}
+                              {selectedTargetLangs.map((langCode) => {
                                 const localeMap: Record<string, string> = {
                                   'da': 'da-DK',
+                                  'nb': 'nb-NO',
                                   'no': 'no-NO',
                                   'en': 'en-US',
                                   'de': 'de-DE',
@@ -2097,10 +2241,16 @@ function BatchOversattningContent() {
                                   {uiItem.name}
                                 </div>
                               </td>
-                              {/* Show all available locales from translationLanguages */}
-                              {translationLanguages.map((langCode) => {
+                              <td className="px-2 py-1 text-xs text-gray-600">
+                                <div className="truncate" title={uiItem.values['sv-SE'] || ''}>
+                                  {uiItem.values['sv-SE'] || '(tom)'}
+                                </div>
+                              </td>
+                              {/* Show only selected target languages */}
+                              {selectedTargetLangs.map((langCode) => {
                                 const localeMap: Record<string, string> = {
                                   'da': 'da-DK',
+                                  'nb': 'nb-NO',
                                   'no': 'no-NO',
                                   'en': 'en-US',
                                   'de': 'de-DE',

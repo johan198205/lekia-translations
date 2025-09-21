@@ -58,13 +58,25 @@ export async function POST(request: NextRequest) {
     // Normalize Excel data
     const result = await normalize(buffer, jobType as 'product_texts' | 'ui_strings' | 'brands');
 
-    // Prepare meta data with tokens
+    // Prepare meta data with tokens, locales, and detected languages
     let metaData = null;
-    if (result.meta && result.meta.tokens) {
+    if (result.meta) {
       try {
-        metaData = JSON.stringify(result.meta.tokens);
+        const metaObject: any = {};
+        if (result.meta.tokens) {
+          metaObject.tokens = result.meta.tokens;
+        }
+        if (result.meta.locales) {
+          metaObject.locales = result.meta.locales;
+        }
+        if (result.meta.detectedLanguages) {
+          metaObject.detectedLanguages = result.meta.detectedLanguages;
+        }
+        if (Object.keys(metaObject).length > 0) {
+          metaData = JSON.stringify(metaObject);
+        }
       } catch (error) {
-        console.warn('Failed to serialize tokens:', error);
+        console.warn('Failed to serialize metadata:', error);
         metaData = null;
       }
     }

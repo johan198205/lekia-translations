@@ -18,16 +18,8 @@ export async function POST(
     const { 
       indices = [], 
       optimizeSv: shouldOptimize = false, 
-      targetLangs = [],
       clientPromptSettings = {}
     } = body
-
-    if (!Array.isArray(targetLangs)) {
-      return NextResponse.json(
-        { error: 'Target languages must be an array' },
-        { status: 400 }
-      )
-    }
 
     // Get OpenAI settings snapshot for this job
     const openaiConfig = await getOpenAIConfig()
@@ -70,6 +62,16 @@ export async function POST(
     }
 
     console.log(`[PROCESS] Batch found: ${batch.id}, job_type: ${batch.job_type}`);
+
+    // Get target languages from batch
+    let targetLangs: string[] = []
+    if (batch.targetLanguages) {
+      try {
+        targetLangs = JSON.parse(batch.targetLanguages)
+      } catch (error) {
+        console.warn('Failed to parse batch targetLanguages:', error)
+      }
+    }
 
     // Support product_texts, ui_strings, and brands
     if (batch.job_type !== 'product_texts' && batch.job_type !== 'ui_strings' && batch.job_type !== 'brands') {
@@ -325,22 +327,49 @@ export async function POST(
               data: { status: 'processing' }
             });
             
-            // Map language codes to locale format
-            const localeMap: Record<string, string> = {
-              'da': 'da-DK',
-              'no': 'no-NO',
-              'en': 'en-US',
-              'de': 'de-DE',
-              'fr': 'fr-FR',
-              'es': 'es-ES',
-              'it': 'it-IT',
-              'pt': 'pt-PT',
-              'nl': 'nl-NL',
-              'pl': 'pl-PL',
-              'ru': 'ru-RU',
-              'fi': 'fi-FI',
-              'sv': 'sv-SE'
-            };
+            // Get original locale structure from upload metadata to use existing column names
+            let originalLocales: string[] = []
+            try {
+              if (batch.upload && batch.upload.meta) {
+                const metaData = JSON.parse(batch.upload.meta)
+                if (metaData.locales) {
+                  originalLocales = metaData.locales
+                } else if (Array.isArray(metaData)) {
+                  // Handle old format where metadata was just tokens array
+                  originalLocales = []
+                }
+              }
+            } catch (error) {
+              console.warn('Failed to parse upload metadata for locales:', error)
+            }
+
+            // Create a mapping from language codes to existing locale column names
+            const languageToLocaleMap: Record<string, string> = {}
+            
+            // Map target languages to existing locales if they exist
+            targetLangs.forEach(langCode => {
+              // Try to find exact match first
+              const exactMatch = originalLocales.find(locale => 
+                locale.toLowerCase() === `${langCode}-${langCode.toUpperCase()}`
+              )
+              if (exactMatch) {
+                languageToLocaleMap[langCode] = exactMatch
+                return
+              }
+              
+              // Try to find partial match (e.g., 'nb' matches 'nb-No' or 'nb-NO')
+              const partialMatch = originalLocales.find(locale => 
+                locale.toLowerCase().startsWith(`${langCode}-`)
+              )
+              if (partialMatch) {
+                languageToLocaleMap[langCode] = partialMatch
+                return
+              }
+              
+              // If no existing locale found, create new one
+              const newLocale = `${langCode}-${langCode.toUpperCase()}`
+              languageToLocaleMap[langCode] = newLocale
+            })
             
             // Start with current values and build up all translations
             let updatedValues = { ...currentValues };
@@ -359,7 +388,7 @@ export async function POST(
                   sourceLang: 'sv'
                 });
                 
-                const locale = localeMap[language] || `${language}-${language.toUpperCase()}`;
+                const locale = languageToLocaleMap[language] || `${language}-${language.toUpperCase()}`;
                 updatedValues[locale] = translatedText;
                 
                 completedJobs++;

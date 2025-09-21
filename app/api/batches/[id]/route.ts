@@ -16,7 +16,17 @@ export async function GET(
         id: batchId,
         deleted_at: null // Only find non-deleted batches
       },
-      include: { 
+      select: {
+        id: true,
+        filename: true,
+        upload_id: true,
+        upload_date: true,
+        total_products: true,
+        job_type: true,
+        status: true,
+        created_at: true,
+        updated_at: true,
+        targetLanguages: true,
         products: {
           select: {
             id: true,
@@ -26,6 +36,7 @@ export async function GET(
             tone_hint: true,
             optimized_sv: true,
             translated_da: true,
+            translated_nb: true,
             translated_no: true,
             translated_en: true,
             translated_de: true,

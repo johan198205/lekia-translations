@@ -5,13 +5,14 @@ import { z } from 'zod'
 const createBatchSchema = z.object({
   upload_id: z.string().min(1),
   job_type: z.enum(['product_texts', 'ui_strings', 'brands']),
-  selected_ids: z.array(z.string()).min(1)
+  selected_ids: z.array(z.string()).min(1),
+  target_languages: z.array(z.string()).optional()
 })
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { upload_id, job_type, selected_ids } = createBatchSchema.parse(body)
+    const { upload_id, job_type, selected_ids, target_languages } = createBatchSchema.parse(body)
 
     // Get upload info
     const upload = await prisma.upload.findUnique({
@@ -33,7 +34,8 @@ export async function POST(request: NextRequest) {
         upload_date: upload.upload_date,
         total_products: selected_ids.length,
         job_type: job_type,
-        status: 'pending'
+        status: 'pending',
+        targetLanguages: target_languages ? JSON.stringify(target_languages) : null
       }
     })
 

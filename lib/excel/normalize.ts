@@ -152,12 +152,23 @@ async function normalizeUIStrings(worksheet: ExcelJS.Worksheet): Promise<Normali
     }
   });
 
+  // Extract language codes from locales for detected languages
+  const detectedLanguages: string[] = [];
+  headers.locales.forEach(locale => {
+    // Extract language code from locale (e.g., "nb-NO" -> "nb", "en-US" -> "en", "sv-SE" -> "sv")
+    const langCode = locale.split('-')[0].toLowerCase();
+    if (!detectedLanguages.includes(langCode)) {
+      detectedLanguages.push(langCode);
+    }
+  });
+
   return {
     uiStrings,
     meta: {
       rows: uiStrings.length,
       skipped,
       locales: headers.locales,
+      detectedLanguages: detectedLanguages.sort(),
     },
   };
 }
@@ -335,7 +346,7 @@ function getUIStringHeaders(worksheet: ExcelJS.Worksheet): { name: number; local
     
     if (headerValue.toLowerCase() === 'name') {
       headers.name = colNumber;
-    } else if (/^[a-z]{2}-[A-Z]{2}$/.test(headerValue)) {
+    } else if (/^[a-z]{2}-[a-zA-Z]{2}$/.test(headerValue)) {
       headers.locales.push(headerValue);
       headers.localeColumns[headerValue] = colNumber;
     }

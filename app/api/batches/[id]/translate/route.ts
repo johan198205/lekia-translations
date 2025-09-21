@@ -11,14 +11,7 @@ export async function POST(
 ) {
   try {
     const { id: batchId } = await params
-    const { languages, selectedProductIds, clientPromptSettings } = await request.json()
-
-    if (!languages || !Array.isArray(languages) || languages.length === 0) {
-      return NextResponse.json(
-        { error: 'Languages array is required' },
-        { status: 400 }
-      )
-    }
+    const { selectedProductIds, clientPromptSettings } = await request.json()
 
     // Get OpenAI settings snapshot for this job
     const openaiConfig = await getOpenAIConfig()
@@ -43,6 +36,23 @@ export async function POST(
       return NextResponse.json(
         { error: 'Batch not found' },
         { status: 404 }
+      )
+    }
+
+    // Get target languages from batch
+    let languages: string[] = []
+    if (batch.targetLanguages) {
+      try {
+        languages = JSON.parse(batch.targetLanguages)
+      } catch (error) {
+        console.warn('Failed to parse batch targetLanguages:', error)
+      }
+    }
+
+    if (!languages || languages.length === 0) {
+      return NextResponse.json(
+        { error: 'No target languages configured for this batch' },
+        { status: 400 }
       )
     }
 

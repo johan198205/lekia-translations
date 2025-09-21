@@ -33,6 +33,7 @@ model ProductBatch {
   total_products  Int
   status          ProductBatchStatus
   job_type        JobType  @default(product_texts)
+  targetLanguages String?  // JSON string containing array of language codes
   products        Product[]
   ui_items        UIItem[]
   brands          Brand[]
@@ -53,6 +54,7 @@ model Product {
   raw_data        String?       // JSON string containing all original Excel columns
   optimized_sv    String?
   translated_da   String?       // Deprecated - use translations field
+  translated_nb   String?       // Deprecated - use translations field
   translated_no   String?       // Deprecated - use translations field
   translated_en   String?       // Deprecated - use translations field
   translated_de   String?       // Deprecated - use translations field

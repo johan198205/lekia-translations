@@ -440,6 +440,7 @@ export async function translateTo(input: TranslateInput, options?: {
       // Get language name from language code
       const languageNames: Record<string, string> = {
         'da': 'danska',
+        'nb': 'norsk bokmål',
         'no': 'norska',
         'en': 'engelska',
         'de': 'tyska',

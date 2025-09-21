@@ -64,7 +64,7 @@ const LANGUAGE_TO_COUNTRY: Record<string, LanguageInfo> = {
   'mt': { countryCode: 'MT', display: 'Maltesiska', emoji: '🇲🇹' },
   'mo': { countryCode: 'MD', display: 'Moldaviska', emoji: '🇲🇩' },
   'nn': { countryCode: 'NO', display: 'Nynorska', emoji: '🇳🇴' },
-  'nb': { countryCode: 'NO', display: 'Bokmål', emoji: '🇳🇴' },
+  'nb': { countryCode: 'NO', display: 'Norsk bokmål', emoji: '🇳🇴' },
   'uk': { countryCode: 'UA', display: 'Ukrainska', emoji: '🇺🇦' },
   'uz': { countryCode: 'UZ', display: 'Uzbekiska', emoji: '🇺🇿' },
   'ka': { countryCode: 'GE', display: 'Georgiska', emoji: '🇬🇪' },

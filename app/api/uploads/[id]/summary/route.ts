@@ -36,17 +36,49 @@ export async function GET(
       )
     }
 
-    // Get translation languages from settings
+    // Get batches and translation languages for this upload
     let translationLanguages: string[] = []
+    let batches: Array<{ id: string; filename: string; created_at: string; targetLanguages: string[] }> = []
     try {
-      const settings = await prisma.openAISettings.findFirst({
-        orderBy: { updated_at: 'desc' }
+      const batchData = await prisma.productBatch.findMany({
+        where: {
+          upload_id: uploadId
+        },
+        select: {
+          id: true,
+          filename: true,
+          created_at: true,
+          targetLanguages: true
+        },
+        orderBy: { created_at: 'desc' }
       })
-      if (settings?.translationLanguages) {
-        translationLanguages = JSON.parse(settings.translationLanguages)
-      }
+      
+      // Collect all unique languages from all batches and format batch data
+      const allLanguages = new Set<string>()
+      batches = batchData.map(batch => {
+        let targetLanguages: string[] = []
+        if (batch.targetLanguages) {
+          try {
+            targetLanguages = JSON.parse(batch.targetLanguages)
+            if (Array.isArray(targetLanguages)) {
+              targetLanguages.forEach(lang => allLanguages.add(lang))
+            }
+          } catch (error) {
+            console.warn('Failed to parse batch targetLanguages:', error)
+          }
+        }
+        
+        return {
+          id: batch.id,
+          filename: batch.filename,
+          created_at: batch.created_at.toISOString(),
+          targetLanguages
+        }
+      })
+      
+      translationLanguages = Array.from(allLanguages).sort()
     } catch (error) {
-      console.warn('Failed to load translation languages for summary:', error)
+      console.warn('Failed to load batches and translation languages:', error)
     }
 
     if (jobType === 'product_texts') {
@@ -98,9 +130,9 @@ export async function GET(
           } catch (error) {
             // Fallback to legacy fields
             translationLanguages.forEach(lang => {
-              if (lang === 'da' && product.translated_da && product.translated_da.trim()) {
-                translationCounts[lang]++
-              } else if (lang === 'no' && product.translated_no && product.translated_no.trim()) {
+              const fieldName = `translated_${lang}` as keyof typeof product
+              const value = product[fieldName] as string | undefined
+              if (value && value.trim()) {
                 translationCounts[lang]++
               }
             })
@@ -108,9 +140,9 @@ export async function GET(
         } else {
           // Fallback to legacy fields
           translationLanguages.forEach(lang => {
-            if (lang === 'da' && product.translated_da && product.translated_da.trim()) {
-              translationCounts[lang]++
-            } else if (lang === 'no' && product.translated_no && product.translated_no.trim()) {
+            const fieldName = `translated_${lang}` as keyof typeof product
+            const value = product[fieldName] as string | undefined
+            if (value && value.trim()) {
               translationCounts[lang]++
             }
           })
@@ -121,7 +153,8 @@ export async function GET(
         totalRows,
         optimizedCount,
         translationCounts,
-        translationLanguages
+        translationLanguages,
+        batches
       })
     } else {
       // Get all UI items from this upload
@@ -168,7 +201,8 @@ export async function GET(
         totalRows,
         optimizedCount: completedCount, // For UI items, use completed count as "optimized"
         translationCounts,
-        translationLanguages
+        translationLanguages,
+        batches
       })
     }
   } catch (error) {
