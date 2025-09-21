@@ -23,6 +23,17 @@ export interface OptimizeInput {
 }
 
 /**
+ * Input for brand optimization tasks
+ */
+export interface OptimizeBrandInput {
+  nameSv: string;
+  descriptionSv: string;
+  attributes?: string | object | null;
+  toneHint?: string;
+  rawData?: string | object; // Raw Excel data
+}
+
+/**
  * Input for translation tasks
  */
 export interface TranslateInput {
@@ -255,6 +266,161 @@ Meta Description: Upptäck ${input.nameSv} - en pålitlig och användarvänlig p
 
   console.debug(`[LLM] Stub optimization completed successfully with mode: ${mode}`);
   return result;
+}
+
+/**
+ * Optimize Swedish brand text using live OpenAI or stub
+ */
+export async function optimizeBrand(input: OptimizeBrandInput, options?: {
+  system?: string;
+  headers?: string;
+  maxWords?: number;
+  temperature?: number;
+  model?: string;
+  toneDefault?: string;
+  promptOptimizeBrandsSv?: string;
+  uploadMeta?: string;
+  settingsTokens?: string;
+}): Promise<{ short_sv: string; long_html_sv: string }> {
+  const { useLive, mode } = getLlmmode();
+  
+  // Log mode before call
+  console.debug(`[LLM] Starting brand optimization with mode: ${mode}`);
+  
+  // Use live OpenAI if available and mode is live
+  if (useLive) {
+    try {
+      // Use passed configuration or get from settings as fallback
+      const config = await getOpenAIConfig();
+      if (options?.model) config.model = options.model;
+      if (options?.promptOptimizeSv) config.promptOptimizeSv = options.promptOptimizeSv;
+      
+      const targetModel = options?.model || config.model;
+      
+      console.debug(`[LLM] Using model: ${targetModel}`);
+      
+      // Create prompt builder with token support
+      const promptBuilder = createPromptBuilder(options?.uploadMeta, options?.settingsTokens);
+      
+      // Build product data for token replacement
+      const productData: Record<string, string> = {
+        name_sv: input.nameSv,
+        title: input.nameSv, // alias
+        description_sv: input.descriptionSv,
+        sv_description: input.descriptionSv, // alias
+        attributes: typeof input.attributes === 'string' ? input.attributes : (input.attributes ? JSON.stringify(input.attributes) : ''),
+        tone_hint: input.toneHint || 'professionell'
+      };
+
+      // Add raw data from Excel if available
+      if (input.rawData) {
+        try {
+          const rawDataObj = typeof input.rawData === 'string' ? JSON.parse(input.rawData) : input.rawData;
+          Object.entries(rawDataObj).forEach(([key, value]) => {
+            if (key !== '__original_row_number__' && value !== null && value !== undefined) {
+              productData[key] = String(value);
+            }
+          });
+        } catch (error) {
+          console.warn('Failed to parse raw data for brand optimization:', error);
+        }
+      }
+
+      const context: PromptContext = {
+        targetLang: 'sv',
+        jobType: 'brands',
+        productData
+      };
+
+      // Use the user's custom prompt with token replacement
+      console.debug('[LLM] Brand data for tokens:', productData);
+      const userPrompt = promptBuilder.buildPrompt(options?.system || config.promptOptimizeBrandsSv, context);
+      console.debug('[LLM] Final brand prompt after token replacement:', userPrompt);
+
+      // Use a simple system prompt that doesn't dictate structure
+      const systemPrompt = `Du är en expert på att optimera varumärkestexter. Följ användarens instruktioner exakt. Generera två versioner: en kort beskrivning (max 50 ord) och en lång HTML-beskrivning (max 200 ord). Svara i JSON-format: {"short_sv": "kort beskrivning", "long_html_sv": "<p>lång HTML-beskrivning</p>"}`;
+
+      const response = await retryFetch(`${OPENAI_BASE_URL}/chat/completions`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${config.apiKey}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          model: targetModel,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userPrompt }
+          ],
+          temperature: options?.temperature || 0.2,
+          max_tokens: 1200
+        })
+      }, RETRY_CONFIG);
+
+      const data = await response.json();
+      console.debug(`[LLM] Brand optimization completed successfully with mode: ${mode}`);
+      
+      // Try to parse JSON response
+      try {
+        const result = JSON.parse(data.choices[0].message.content);
+        return {
+          short_sv: result.short_sv || '',
+          long_html_sv: result.long_html_sv || ''
+        };
+      } catch (parseError) {
+        console.warn('Failed to parse brand optimization JSON, using fallback');
+        const content = data.choices[0].message.content;
+        return {
+          short_sv: content.substring(0, 200),
+          long_html_sv: `<p>${content}</p>`
+        };
+      }
+      
+    } catch (error) {
+      console.error('OpenAI brand optimize error:', error);
+      console.debug(`[LLM] Brand optimization failed with mode: ${mode}, falling back to stub`);
+      // Fall back to stub on error
+    }
+  }
+  
+  // Stub implementation for brands
+  const snippet = input.descriptionSv
+    .substring(0, 240)
+    .trim();
+  
+  let attributesSection = '';
+  if (input.attributes) {
+    const attrs = typeof input.attributes === 'string' ? input.attributes : JSON.stringify(input.attributes);
+    attributesSection = `\n\nSpecifikationer\n${attrs}`;
+  }
+
+  const shortResult = `${input.nameSv} - Kvalitetsprodukt med pålitlig funktionalitet. Perfekt för professionellt och privat bruk.`;
+  
+  const longResult = `<h2>${input.nameSv}</h2>
+<p>Kort introduktion</p>
+<p>${snippet}</p>
+
+<p>Varumärkesbeskrivning</p>
+<p>Detta varumärke erbjuder pålitlig funktionalitet för dina behov. Med sin kvalitetsbyggnad och användarvänliga design ger det dig en smidig upplevelse. Perfekt för både professionellt och privat bruk.</p>
+
+<h3>Höjdpunkter (för UX, CRO och AI Overview)</h3>
+<ul>
+<li>Hög kvalitet och pålitlighet</li>
+<li>Användarvänlig design och funktionalitet</li>
+<li>Mångsidig användning</li>
+<li>Kostnadseffektiv lösning</li>
+<li>Snabb leverans och support</li>
+</ul>${attributesSection}
+
+<h3>Meta (valfritt)</h3>
+<p>Meta Title: ${input.nameSv} - Professionell lösning för dina behov</p>
+<p>Meta Description: Upptäck ${input.nameSv} - en pålitlig och användarvänlig produkt som ger dig kvalitet och funktionalitet. Beställ nu för snabb leverans!</p>`;
+
+  console.debug(`[LLM] Stub brand optimization completed successfully with mode: ${mode}`);
+  return {
+    short_sv: shortResult,
+    long_html_sv: longResult
+  };
 }
 
 /**

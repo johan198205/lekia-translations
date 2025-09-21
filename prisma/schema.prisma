@@ -20,6 +20,7 @@ model Upload {
   products        Product[]
   batches         ProductBatch[]
   ui_items        UIItem[]
+  brands          Brand[]
   created_at      DateTime @default(now())
   updated_at      DateTime @updatedAt
 }
@@ -34,6 +35,7 @@ model ProductBatch {
   job_type        JobType  @default(product_texts)
   products        Product[]
   ui_items        UIItem[]
+  brands          Brand[]
   upload          Upload   @relation(fields: [upload_id], references: [id])
   created_at      DateTime @default(now())
   updated_at      DateTime @updatedAt
@@ -94,9 +96,31 @@ model UIItem {
   batch           ProductBatch? @relation(fields: [batch_id], references: [id])
 }
 
+model Brand {
+  id              String        @id @default(cuid())
+  upload_id       String
+  batch_id        String?
+  name_sv         String
+  description_sv  String
+  attributes      String?
+  tone_hint       String?
+  raw_data        String?       // JSON string containing all original Excel columns
+  short_sv        String?       // Short description in Swedish
+  long_html_sv    String?       // Long HTML description in Swedish
+  translations    String?       // JSON string containing {langCode: {short: string, long_html: string}}
+  status          BrandStatus
+  error_message   String?
+  created_at      DateTime      @default(now())
+  updated_at      DateTime      @updatedAt
+  
+  upload          Upload        @relation(fields: [upload_id], references: [id])
+  batch           ProductBatch? @relation(fields: [batch_id], references: [id])
+}
+
 enum JobType {
   product_texts
   ui_strings
+  brands
 }
 
 enum UIItemStatus {
@@ -115,13 +139,24 @@ enum ProductStatus {
   error
 }
 
+enum BrandStatus {
+  pending
+  optimizing
+  optimized
+  translating
+  completed
+  error
+}
+
 model OpenAISettings {
   id                           String   @id @default(cuid())
   openaiApiKeyEnc              String?  // Encrypted API key
   openaiModel                  String   @default("gpt-4o-mini")
-  promptOptimizeSv             String   // Swedish optimization prompt
+  promptOptimizeSv             String   // Swedish optimization prompt for products
+  promptOptimizeBrandsSv       String?  // Swedish optimization prompt for brands
   promptTranslateDirect        String   // Direct translation prompt (deprecated)
   exampleProductImportTokens   String?  // JSON string containing extracted tokens from example file
+  exampleBrandsImportTokens    String?  // JSON string containing extracted tokens from brands example file
   translationLanguages         String?  // JSON string containing array of ISO-639-1 language codes
   originalLanguage             String?  // ISO-639-1 language code for original/source language
   glossary                     String?  // JSON string containing glossary entries

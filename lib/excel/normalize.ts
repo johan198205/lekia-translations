@@ -14,9 +14,18 @@ export interface UIString {
   values: Record<string, string>;
 }
 
+export interface Brand {
+  name_sv: string;
+  description_sv: string;
+  attributes?: string;
+  tone_hint?: string;
+  raw_data?: Record<string, any>; // All original Excel columns
+}
+
 export interface NormalizeResult {
   products?: Product[];
   uiStrings?: UIString[];
+  brands?: Brand[];
   meta: {
     rows: number;
     skipped: number;
@@ -34,7 +43,11 @@ const HEADER_ALIASES = {
   tone_hint: ['tone_hint', 'tone', 'style'],
 } as const;
 
-const REQUIRED_COLUMNS = ['name_sv', 'description_sv'] as const;
+const REQUIRED_COLUMNS = {
+  product_texts: ['name_sv', 'description_sv'],
+  ui_strings: [],
+  brands: [] // Brands don't have required columns
+} as const;
 const MAX_DESCRIPTION_LENGTH = 4000;
 
 export class NormalizationError extends Error {
@@ -58,6 +71,8 @@ export async function normalize(buffer: Buffer | ArrayBuffer, jobType: 'product_
 
     if (jobType === 'ui_strings') {
       return await normalizeUIStrings(worksheet);
+    } else if (jobType === 'brands') {
+      return await normalizeBrands(worksheet);
     } else {
       return await normalizeProducts(worksheet);
     }
@@ -71,7 +86,7 @@ export async function normalize(buffer: Buffer | ArrayBuffer, jobType: 'product_
 
 async function normalizeProducts(worksheet: ExcelJS.Worksheet): Promise<NormalizeResult> {
   const headers = getNormalizedHeaders(worksheet);
-  validateRequiredColumns(headers);
+  validateRequiredColumns(headers, 'product_texts');
   
   // Extract tokens from all column headers
   const allHeaders = getAllHeaders(worksheet);
@@ -230,8 +245,9 @@ function suggestOriginalLanguage(headers: string[], detectedLanguages: string[])
   return detectedLanguages.length > 0 ? detectedLanguages[0] : undefined;
 }
 
-function validateRequiredColumns(headers: Record<string, number>): void {
-  const missingColumns = REQUIRED_COLUMNS.filter(col => !(col in headers));
+function validateRequiredColumns(headers: Record<string, number>, jobType: 'product_texts' | 'ui_strings' | 'brands' = 'product_texts'): void {
+  const requiredColumns = REQUIRED_COLUMNS[jobType] || [];
+  const missingColumns = requiredColumns.filter(col => !(col in headers));
   
   if (missingColumns.length > 0) {
     throw new NormalizationError(
@@ -361,3 +377,109 @@ function parseUIStringRow(row: ExcelJS.Row, headers: { name: number; locales: st
 
 // TODO: Litium-specifika alias för kolumnmappning
 // TODO: Parsa attributes till strukturerat objekt
+
+async function normalizeBrands(worksheet: ExcelJS.Worksheet): Promise<NormalizeResult> {
+  const headers = getNormalizedHeaders(worksheet);
+  
+  validateRequiredColumns(headers, 'brands');
+  
+  // Extract tokens from all column headers
+  const allHeaders = getAllHeaders(worksheet);
+  let extractedTokens;
+  try {
+    extractedTokens = extractTokens(allHeaders);
+  } catch (error) {
+    console.warn('Failed to extract tokens:', error);
+    extractedTokens = { tokens: [], systemTokens: [] };
+  }
+
+  // Detect language patterns in headers
+  const detectedLanguages = detectLanguagePatterns(allHeaders);
+  const suggestedOriginalLanguage = suggestOriginalLanguage(allHeaders, detectedLanguages);
+  
+  const brands: Brand[] = [];
+  let skipped = 0;
+  
+  worksheet.eachRow((row, rowNumber) => {
+    if (rowNumber === 1) return; // Skip header row
+    
+    if (isEmptyRow(row)) {
+      skipped++;
+      return;
+    }
+    
+    const brand = parseBrandRow(row, headers);
+    if (brand) {
+      brands.push(brand);
+    }
+  });
+
+  return {
+    brands,
+    meta: {
+      rows: brands.length,
+      skipped,
+      tokens: extractedTokens,
+      detectedLanguages,
+      suggestedOriginalLanguage,
+    },
+  };
+}
+
+function parseBrandRow(row: ExcelJS.Row, headers: Record<string, number>): Brand | null {
+  // For brands, we don't require specific columns - use whatever is available
+  // Try to find any name-like and description-like columns
+  let name_sv = '';
+  let description_sv = '';
+  
+  // Look for common name/description patterns in headers
+  for (const [headerName, colNumber] of Object.entries(headers)) {
+    const lowerHeader = headerName.toLowerCase();
+    if (lowerHeader.includes('name') || lowerHeader.includes('namn') || lowerHeader.includes('titel')) {
+      name_sv = getCellValue(row, colNumber) || '';
+    }
+    if (lowerHeader.includes('description') || lowerHeader.includes('beskrivning') || lowerHeader.includes('text')) {
+      description_sv = getCellValue(row, colNumber) || '';
+    }
+  }
+  
+  // If we can't find name/description, use the first two non-empty cells
+  if (!name_sv || !description_sv) {
+    const cellValues: string[] = [];
+    row.eachCell((cell, colNumber) => {
+      if (cell.value && String(cell.value).trim()) {
+        cellValues.push(String(cell.value).trim());
+      }
+    });
+    
+    if (cellValues.length === 0) {
+      return null; // Skip empty rows
+    }
+    
+    name_sv = name_sv || cellValues[0] || 'Unnamed Brand';
+    description_sv = description_sv || cellValues[1] || cellValues[0] || '';
+  }
+  
+  const attributes = headers.attributes ? getCellValue(row, headers.attributes) : undefined;
+  const tone_hint = headers.tone_hint ? getCellValue(row, headers.tone_hint) : undefined;
+  
+  // Collect all raw data from the row
+  const rawData: Record<string, any> = {};
+  row.eachCell((cell, colNumber) => {
+    const headerValue = getHeaderValue(row.worksheet, colNumber);
+    if (headerValue) {
+      rawData[headerValue] = cell.value || '';
+    }
+  });
+  
+  // Add original row number to preserve order
+  rawData['__original_row_number__'] = row.number;
+  
+  return {
+    name_sv: name_sv.trim(),
+    description_sv: truncateDescription(description_sv.trim()),
+    attributes: attributes?.trim(),
+    tone_hint: tone_hint?.trim(),
+    raw_data: rawData,
+  };
+}

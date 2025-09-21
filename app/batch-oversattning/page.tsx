@@ -57,6 +57,20 @@ interface UIString {
   status?: string;
 }
 
+interface Brand {
+  id: string;
+  name_sv: string;
+  description_sv: string;
+  attributes?: string;
+  tone_hint?: string;
+  short_sv?: string;
+  long_html_sv?: string;
+  translations?: string;
+  status?: string;
+  batch_id?: string;
+  error_message?: string;
+}
+
 interface Upload {
   id: string;
   filename: string;
@@ -64,7 +78,7 @@ interface Upload {
   total_products: number;
   products_remaining: number;
   batches_count: number;
-  job_type: 'product_texts' | 'ui_strings';
+  job_type: 'product_texts' | 'ui_strings' | 'brands';
   created_at: string;
   updated_at: string;
   token_count: number;
@@ -78,7 +92,7 @@ interface Batch {
   status: string;
   created_at: string;
   upload_id: string;
-  job_type: 'product_texts' | 'ui_strings';
+  job_type: 'product_texts' | 'ui_strings' | 'brands';
   products: Product[];
   ui_items?: any[];
 }
@@ -105,11 +119,12 @@ type SourceType = 'existing' | 'new' | null
 function BatchOversattningContent() {
   const searchParams = useSearchParams()
   const [file, setFile] = useState<File | null>(null)
-  const [jobType, setJobType] = useState<'product_texts' | 'ui_strings'>('product_texts')
+  const [jobType, setJobType] = useState<'product_texts' | 'ui_strings' | 'brands'>('product_texts')
   const [sourceType, setSourceType] = useState<SourceType>(null)
   const [productsCount, setProductsCount] = useState<number>(0)
   const [parsedProducts, setParsedProducts] = useState<Product[]>([])
   const [parsedUIStrings, setParsedUIStrings] = useState<UIString[]>([])
+  const [parsedBrands, setParsedBrands] = useState<Brand[]>([])
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
   const [batchId, setBatchId] = useState<string>('')
   const [visibleRows, setVisibleRows] = useState<number>(200)
@@ -177,8 +192,8 @@ function BatchOversattningContent() {
 
   // Load jobType from URL params and prompt settings from localStorage on mount
   useEffect(() => {
-    const urlJobType = searchParams.get('jobType') as 'product_texts' | 'ui_strings'
-    if (urlJobType && (urlJobType === 'product_texts' || urlJobType === 'ui_strings')) {
+    const urlJobType = searchParams.get('jobType') as 'product_texts' | 'ui_strings' | 'brands'
+    if (urlJobType && (urlJobType === 'product_texts' || urlJobType === 'ui_strings' || urlJobType === 'brands')) {
       setJobType(urlJobType)
     }
 
@@ -290,7 +305,7 @@ function BatchOversattningContent() {
     setUploadId('')
   }
 
-  const handleJobTypeChange = (newJobType: 'product_texts' | 'ui_strings') => {
+  const handleJobTypeChange = (newJobType: 'product_texts' | 'ui_strings' | 'brands') => {
     setJobType(newJobType)
     setFile(null)
     setSourceType(null)
@@ -298,6 +313,7 @@ function BatchOversattningContent() {
     setUploadAlert('')
     setParsedProducts([])
     setParsedUIStrings([])
+    setParsedBrands([])
     setSelectedIds(new Set())
     setSelectedUpload(null)
     setUploadId('')
@@ -441,6 +457,14 @@ function BatchOversattningContent() {
           setCurrentStep(2)
           const locales = data.meta?.locales || []
           setUploadAlert(`✅ Fil uppladdad! ${data.uiStrings.length} UI-element hittades. Språk: ${locales.join(', ')}`)
+        } else if (jobType === 'brands' && data.brands) {
+          setProductsCount(data.brands.length)
+          setParsedBrands(data.brands)
+          setSelectedIds(new Set(data.brands.map((_: any, index: number) => index)))
+          setUploadId(data.uploadId)
+          setPhase('uploaded')
+          setCurrentStep(2)
+          setUploadAlert(`✅ Fil uppladdad! ${data.brands.length} varumärken hittades.`)
         }
         
         // Reload uploads list to include the new upload
@@ -469,9 +493,12 @@ function BatchOversattningContent() {
       if (jobType === 'product_texts') {
         // Get selected product IDs
         selectedItemIds = Array.from(selectedIds).map(index => parsedProducts[index]?.id).filter(Boolean)
-      } else {
+      } else if (jobType === 'ui_strings') {
         // Get selected UI item IDs
         selectedItemIds = Array.from(selectedIds).map(index => parsedUIStrings[index]?.id).filter(Boolean)
+      } else if (jobType === 'brands') {
+        // Get selected brand IDs
+        selectedItemIds = Array.from(selectedIds).map(index => parsedBrands[index]?.id).filter(Boolean)
       }
       
       console.log('Creating batch with:', {
@@ -548,7 +575,9 @@ function BatchOversattningContent() {
       // Load remaining items for manual selection
       const endpoint = selectedUpload.job_type === 'product_texts' 
         ? `/api/uploads/${selectedUpload.id}/products`
-        : `/api/uploads/${selectedUpload.id}/ui-items`
+        : selectedUpload.job_type === 'ui_strings'
+        ? `/api/uploads/${selectedUpload.id}/ui-items`
+        : `/api/uploads/${selectedUpload.id}/brands`
       const response = await fetch(endpoint)
       if (response.ok) {
         const data = await response.json()
@@ -557,11 +586,16 @@ function BatchOversattningContent() {
           setProductsCount(data.products.length)
           setSelectedIds(new Set(data.products.map((_: any, index: number) => index)))
           setUploadAlert(`✅ ${data.products.length} återstående produkter laddade. Välj produkter nedan och klicka "Skapa batch".`)
-        } else {
+        } else if (selectedUpload.job_type === 'ui_strings') {
           setParsedUIStrings(data.uiItems)
           setProductsCount(data.uiItems.length)
           setSelectedIds(new Set(data.uiItems.map((_: any, index: number) => index)))
           setUploadAlert(`✅ ${data.uiItems.length} återstående UI-element laddade. Välj UI-element nedan och klicka "Skapa batch".`)
+        } else if (selectedUpload.job_type === 'brands') {
+          setParsedBrands(data.brands)
+          setProductsCount(data.brands.length)
+          setSelectedIds(new Set(data.brands.map((_: any, index: number) => index)))
+          setUploadAlert(`✅ ${data.brands.length} återstående varumärken laddade. Välj varumärken nedan och klicka "Skapa batch".`)
         }
         setPhase('uploaded')
       } else {
@@ -928,7 +962,7 @@ function BatchOversattningContent() {
   }
 
   const getCurrentItems = () => {
-    return jobType === 'product_texts' ? parsedProducts : parsedUIStrings
+    return jobType === 'product_texts' ? parsedProducts : jobType === 'ui_strings' ? parsedUIStrings : parsedBrands
   }
 
   const handleSelectAll = () => {
@@ -1413,12 +1447,13 @@ function BatchOversattningContent() {
                 id="jobTypeSelect"
                 name="jobType"
                 value={jobType}
-                onChange={(e) => handleJobTypeChange(e.target.value as 'product_texts' | 'ui_strings')}
+                onChange={(e) => handleJobTypeChange(e.target.value as 'product_texts' | 'ui_strings' | 'brands')}
                 className="mt-1 block w-full pl-3 pr-10 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md"
                 style={{ padding: '10px' }}
               >
                 <option value="product_texts">Produkttexter (befintligt)</option>
                 <option value="ui_strings">UI-element / Webbplatstexter (NY)</option>
+                <option value="brands">Varumärken (NY)</option>
               </select>
             </div>
 
@@ -1460,7 +1495,7 @@ function BatchOversattningContent() {
                         .filter(upload => upload.job_type === jobType)
                         .map((upload) => (
                         <option key={upload.id} value={upload.id}>
-                          {upload.filename} ({upload.products_remaining} {jobType === 'product_texts' ? 'produkter' : 'UI-element'} kvar, {upload.batches_count} batches{upload.token_count > 0 ? `, ${upload.token_count} tokens` : ''})
+                          {upload.filename} ({upload.products_remaining} {jobType === 'product_texts' ? 'produkter' : jobType === 'ui_strings' ? 'UI-element' : 'varumärken'} kvar, {upload.batches_count} batches{upload.token_count > 0 ? `, ${upload.token_count} tokens` : ''})
                         </option>
                       ))}
                     </select>
@@ -1577,8 +1612,8 @@ function BatchOversattningContent() {
           <ModernStepCard
             stepNumber={2}
             title="Välj rader & Skapa batch"
-            description={`Välj ${jobType === 'product_texts' ? 'produkter' : 'UI-element'} att inkludera i batchen och skapa sedan batchen`}
-            icon={jobType === 'product_texts' ? '📦' : '🌐'}
+            description={`Välj ${jobType === 'product_texts' ? 'produkter' : jobType === 'ui_strings' ? 'UI-element' : 'varumärken'} att inkludera i batchen och skapa sedan batchen`}
+            icon={jobType === 'product_texts' ? '📦' : jobType === 'ui_strings' ? '🌐' : '🏷️'}
             isActive={currentStep >= 2}
             isCompleted={currentStep > 2}
             ctaText="Skapa batch"
@@ -1591,11 +1626,11 @@ function BatchOversattningContent() {
             <div className="space-y-4">
               <div className="flex justify-between items-center">
                 <h3 className="text-lg font-medium">
-                  Välj {jobType === 'product_texts' ? 'produkter' : 'UI-element'} ({selectedIds.size} av {jobType === 'product_texts' ? parsedProducts.length : parsedUIStrings.length})
+                  Välj {jobType === 'product_texts' ? 'produkter' : jobType === 'ui_strings' ? 'UI-element' : 'varumärken'} ({selectedIds.size} av {jobType === 'product_texts' ? parsedProducts.length : jobType === 'ui_strings' ? parsedUIStrings.length : parsedBrands.length})
                 </h3>
               </div>
               {selectedIds.size === 0 && (
-                <p className="text-sm text-red-600">⚠️ Välj minst en {jobType === 'product_texts' ? 'produkt' : 'UI-element'} för att skapa batch</p>
+                <p className="text-sm text-red-600">⚠️ Välj minst en {jobType === 'product_texts' ? 'produkt' : jobType === 'ui_strings' ? 'UI-element' : 'varumärke'} för att skapa batch</p>
               )}
               {batchAlert && (
                 <p className={`text-sm ${batchAlert.startsWith('✅') ? 'text-green-600' : 'text-red-600'}`}>
@@ -1656,10 +1691,10 @@ function BatchOversattningContent() {
                         />
                       </th>
                       <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        {jobType === 'product_texts' ? 'Produktnamn' : 'Namn'}
+                        {jobType === 'product_texts' ? 'Produktnamn' : jobType === 'ui_strings' ? 'Namn' : 'Varumärkesnamn'}
                       </th>
                       <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        {jobType === 'product_texts' ? 'Beskrivning' : 'Värden'}
+                        {jobType === 'product_texts' ? 'Beskrivning' : jobType === 'ui_strings' ? 'Värden' : 'Beskrivning'}
                       </th>
                     </tr>
                   </thead>
@@ -1675,14 +1710,14 @@ function BatchOversattningContent() {
                           />
                         </td>
                         <td className="px-3 py-2 text-sm font-medium text-gray-900">
-                          {jobType === 'product_texts' ? (item as Product).name_sv : (item as UIString).name}
+                          {jobType === 'product_texts' ? (item as Product).name_sv : jobType === 'ui_strings' ? (item as UIString).name : (item as Brand).name_sv}
                         </td>
                         <td className="px-3 py-2 text-sm text-gray-500">
                           {jobType === 'product_texts' ? (
                             (item as Product).description_sv.length > 120 
                               ? `${(item as Product).description_sv.substring(0, 120)}...` 
                               : (item as Product).description_sv
-                          ) : (
+                          ) : jobType === 'ui_strings' ? (
                             <div className="space-y-1">
                               {Object.entries((item as UIString).values).map(([locale, value]) => (
                                 <div key={locale} className="text-xs">
@@ -1690,6 +1725,10 @@ function BatchOversattningContent() {
                                 </div>
                               ))}
                             </div>
+                          ) : (
+                            (item as Brand).description_sv.length > 120 
+                              ? `${(item as Brand).description_sv.substring(0, 120)}...` 
+                              : (item as Brand).description_sv
                           )}
                         </td>
                       </tr>
@@ -1884,6 +1923,13 @@ function BatchOversattningContent() {
                     >
                       🚀 Kör bearbetning
                     </button>
+                    <button
+                      onClick={handleExport}
+                      disabled={!batchId}
+                      className="bg-emerald-600 text-white px-4 py-2 rounded-md hover:bg-emerald-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-sm font-medium"
+                    >
+                      📊 Exportera Excel
+                    </button>
                     {selectedIds.size === 0 && (
                       <span className="text-sm text-gray-500 flex items-center">
                         Välj produkter att bearbeta
@@ -1904,8 +1950,8 @@ function BatchOversattningContent() {
                           <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-8">
                             <input
                               type="checkbox"
-                              checked={selectedIds.size === (jobType === 'product_texts' ? parsedProducts.length : parsedUIStrings.length) && (jobType === 'product_texts' ? parsedProducts.length : parsedUIStrings.length) > 0}
-                              onChange={selectedIds.size === (jobType === 'product_texts' ? parsedProducts.length : parsedUIStrings.length) ? handleDeselectAll : handleSelectAll}
+                              checked={selectedIds.size === (jobType === 'product_texts' ? parsedProducts.length : jobType === 'ui_strings' ? parsedUIStrings.length : parsedBrands.length) && (jobType === 'product_texts' ? parsedProducts.length : jobType === 'ui_strings' ? parsedUIStrings.length : parsedBrands.length) > 0}
+                              onChange={selectedIds.size === (jobType === 'product_texts' ? parsedProducts.length : jobType === 'ui_strings' ? parsedUIStrings.length : parsedBrands.length) ? handleDeselectAll : handleSelectAll}
                               className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                             />
                           </th>
@@ -1917,6 +1963,19 @@ function BatchOversattningContent() {
                               {translationLanguages.map((langCode) => (
                                 <th key={langCode} className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                   OPTIMERAD TEXT ({langCode.toUpperCase()})
+                                </th>
+                              ))}
+                              <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-20">STATUS</th>
+                            </>
+                          ) : jobType === 'brands' ? (
+                            <>
+                              <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">VARUMÄRKESNAMN</th>
+                              <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">BESKRIVNING (SV)</th>
+                              <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">KORT BESKRIVNING (SV)</th>
+                              <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">LÅNG BESKRIVNING HTML (SV)</th>
+                              {translationLanguages.map((langCode) => (
+                                <th key={langCode} className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                  KORT BESKRIVNING ({langCode.toUpperCase()})
                                 </th>
                               ))}
                               <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-20">STATUS</th>
@@ -2022,7 +2081,7 @@ function BatchOversattningContent() {
                               </td>
                             </tr>
                           ))
-                        ) : (
+                        ) : jobType === 'ui_strings' ? (
                           parsedUIStrings.slice(0, visibleRows).map((uiItem, index) => (
                             <tr key={index} className="hover:bg-gray-50">
                               <td className="px-2 py-1">
@@ -2070,22 +2129,114 @@ function BatchOversattningContent() {
                               </td>
                             </tr>
                           ))
+                        ) : (
+                          parsedBrands.slice(0, visibleRows).map((brand, index) => (
+                            <tr key={index} className="hover:bg-gray-50">
+                              <td className="px-2 py-1">
+                                <input
+                                  type="checkbox"
+                                  checked={selectedIds.has(index)}
+                                  onChange={() => handleProductToggle(index)}
+                                  className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                />
+                              </td>
+                              <td className="px-2 py-1 text-xs font-bold text-gray-900">
+                                <div className="truncate" title={brand.name_sv}>
+                                  {brand.name_sv}
+                                </div>
+                              </td>
+                              <td className="px-2 py-1 text-xs text-gray-500">
+                                <div 
+                                  className="cursor-pointer hover:bg-gray-100 truncate"
+                                  onClick={() => handleCellClick(brand, 'description_sv')}
+                                  title="Klicka för att redigera"
+                                >
+                                  {brand.description_sv.length > 40 
+                                    ? `${brand.description_sv.substring(0, 40)}...` 
+                                    : brand.description_sv}
+                                </div>
+                              </td>
+                              <td className="px-2 py-1 text-xs text-gray-500">
+                                {brand.short_sv ? (
+                                  <div 
+                                    className="cursor-pointer hover:bg-gray-100 truncate"
+                                    onClick={() => handleCellClick(brand, 'short_sv')}
+                                    title="Klicka för att redigera"
+                                  >
+                                    <div className="truncate font-mono text-xs">
+                                      {brand.short_sv.substring(0, 40) + (brand.short_sv.length > 40 ? '...' : '')}
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <span className="text-gray-400">-</span>
+                                )}
+                              </td>
+                              <td className="px-2 py-1 text-xs text-gray-500">
+                                {brand.long_html_sv ? (
+                                  <div 
+                                    className="cursor-pointer hover:bg-gray-100 truncate"
+                                    onClick={() => handleCellClick(brand, 'long_html_sv')}
+                                    title="Klicka för att redigera"
+                                  >
+                                    <div className="truncate font-mono text-xs">
+                                      {brand.long_html_sv.substring(0, 40) + (brand.long_html_sv.length > 40 ? '...' : '')}
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <span className="text-gray-400">-</span>
+                                )}
+                              </td>
+                              {translationLanguages.map((langCode) => {
+                                let translatedText = '';
+                                if (brand.translations) {
+                                  try {
+                                    const translations = JSON.parse(brand.translations);
+                                    if (translations[langCode]) {
+                                      translatedText = translations[langCode].short || '';
+                                    }
+                                  } catch (error) {
+                                    console.warn('Failed to parse brand translations:', error);
+                                  }
+                                }
+                                return (
+                                  <td key={langCode} className="px-2 py-1 text-xs text-gray-500">
+                                    {translatedText ? (
+                                      <div 
+                                        className="cursor-pointer hover:bg-gray-100 truncate"
+                                        onClick={() => handleCellClick(brand, `translations.${langCode}.short` as any)}
+                                        title="Klicka för att redigera"
+                                      >
+                                        {translatedText.length > 40 
+                                          ? `${translatedText.substring(0, 40)}...` 
+                                          : translatedText}
+                                      </div>
+                                    ) : (
+                                      <span className="text-gray-400">-</span>
+                                    )}
+                                  </td>
+                                );
+                              })}
+                              <td className="px-2 py-1 text-xs text-gray-700">
+                                {brand.status || 'pending'}
+                              </td>
+                            </tr>
+                          ))
                         )}
                       </tbody>
                     </table>
                   </div>
                   
                   {/* Visa fler-knapp */}
-                  {visibleRows < (jobType === 'product_texts' ? parsedProducts.length : parsedUIStrings.length) && (
+                  {visibleRows < (jobType === 'product_texts' ? parsedProducts.length : jobType === 'ui_strings' ? parsedUIStrings.length : parsedBrands.length) && (
                     <div className="text-center mt-4">
                       <button
                         onClick={handleShowMore}
                         className="bg-gray-600 text-white px-4 py-2 rounded-md hover:bg-gray-700 text-sm"
                       >
-                        Visa fler ({Math.min(200, (jobType === 'product_texts' ? parsedProducts.length : parsedUIStrings.length) - visibleRows)} till)
+                        Visa fler ({Math.min(200, (jobType === 'product_texts' ? parsedProducts.length : jobType === 'ui_strings' ? parsedUIStrings.length : parsedBrands.length) - visibleRows)} till)
                       </button>
                       <p className="text-xs text-gray-500 mt-1">
-                        Visar {Math.min(visibleRows, jobType === 'product_texts' ? parsedProducts.length : parsedUIStrings.length)} av {jobType === 'product_texts' ? parsedProducts.length : parsedUIStrings.length} {jobType === 'product_texts' ? 'produkter' : 'UI-element'}
+                        Visar {Math.min(visibleRows, jobType === 'product_texts' ? parsedProducts.length : jobType === 'ui_strings' ? parsedUIStrings.length : parsedBrands.length)} av {jobType === 'product_texts' ? parsedProducts.length : jobType === 'ui_strings' ? parsedUIStrings.length : parsedBrands.length} {jobType === 'product_texts' ? 'produkter' : jobType === 'ui_strings' ? 'UI-element' : 'varumärken'}
                       </p>
                     </div>
                   )}

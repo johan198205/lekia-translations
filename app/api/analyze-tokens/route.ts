@@ -50,8 +50,45 @@ export async function POST(request: NextRequest) {
     // Read file buffer
     const buffer = Buffer.from(await file.arrayBuffer());
 
-    // Normalize Excel data to extract tokens
-    const result = await normalize(buffer, 'product_texts');
+    // Determine job type based on filename or try both
+    let jobType: 'product_texts' | 'brands' = 'product_texts';
+    console.log(`[AnalyzeTokens] Uploaded file name: ${file.name}`); // LOG 1
+    
+    // Normalize filename for better matching
+    const normalizedFilename = file.name.toLowerCase()
+      .replace(/ä/g, 'a')
+      .replace(/ö/g, 'o')
+      .replace(/å/g, 'a');
+    
+    console.log(`[AnalyzeTokens] Normalized filename: ${normalizedFilename}`); // LOG 1.5
+    
+    if (normalizedFilename.includes('brand') || 
+        normalizedFilename.includes('varumark') || 
+        normalizedFilename.includes('varumarken')) {
+      jobType = 'brands';
+    }
+    console.log(`[AnalyzeTokens] Initial jobType determined: ${jobType}`); // LOG 2
+
+    // Try to normalize with determined job type first
+    let result;
+    try {
+      result = await normalize(buffer, jobType);
+      console.log(`[AnalyzeTokens] Normalization successful with jobType: ${jobType}`); // LOG 3
+    } catch (error) {
+      console.log(`[AnalyzeTokens] Normalization failed with jobType: ${jobType}. Trying fallback.`); // LOG 4
+      console.log(`[AnalyzeTokens] Error details:`, error); // LOG 4.5
+      // If it fails, try the other job type
+      const otherJobType = jobType === 'product_texts' ? 'brands' : 'product_texts';
+      try {
+        result = await normalize(buffer, otherJobType);
+        jobType = otherJobType;
+        console.log(`[AnalyzeTokens] Fallback successful with jobType: ${jobType}`); // LOG 5
+      } catch (fallbackError) {
+        console.error(`[AnalyzeTokens] Fallback also failed with jobType: ${otherJobType}`, fallbackError); // LOG 6
+        // If both fail, throw the original error
+        throw error;
+      }
+    }
 
     // Return tokens and detected languages information
     return NextResponse.json({
@@ -63,11 +100,11 @@ export async function POST(request: NextRequest) {
     });
 
   } catch (error) {
-    console.error('Token analysis error:', error);
+    console.error('[AnalyzeTokens] Error during token analysis:', error); // LOG 7
     
     if (error instanceof Error && error.message.includes('Missing required columns')) {
       return NextResponse.json(
-        { error: 'File must contain at least "name_sv" and "description_sv" columns' },
+        { error: 'File must contain the required columns for the file type. For products: "name_sv" and "description_sv". For brands: appropriate brand columns.' },
         { status: 400 }
       );
     }

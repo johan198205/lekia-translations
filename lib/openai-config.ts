@@ -9,8 +9,10 @@ export interface OpenAIConfig {
   apiKey: string;
   model: string;
   promptOptimizeSv: string;
+  promptOptimizeBrandsSv?: string | null;
   promptTranslateDirect: string;
   exampleProductImportTokens?: string | null;
+  exampleBrandsImportTokens?: string | null;
   glossary?: string | null;
 }
 
@@ -38,8 +40,10 @@ export async function getOpenAIConfig(): Promise<OpenAIConfig> {
       apiKey,
       model: settings.openaiModel,
       promptOptimizeSv: settings.promptOptimizeSv,
+      promptOptimizeBrandsSv: settings.promptOptimizeBrandsSv,
       promptTranslateDirect: settings.promptTranslateDirect,
       exampleProductImportTokens: settings.exampleProductImportTokens,
+      exampleBrandsImportTokens: settings.exampleBrandsImportTokens,
       glossary: settings.glossary
     };
   }
@@ -53,6 +57,7 @@ export async function getOpenAIConfig(): Promise<OpenAIConfig> {
     apiKey: OPENAI_API_KEY,
     model: OPENAI_MODEL_OPTIMIZE, // Use optimize model as default
     promptOptimizeSv: `Du är en senior e-handelscopywriter och SEO-strateg. Skriv om svenska produkttexter så att de blir lättläsa, säljande men sakliga, och optimerade för UX, CRO, SEO och AI Overview. Bevara fakta, varumärken och siffror exakt. Inga hallucinationer.`,
+    promptOptimizeBrandsSv: `Du är en expert på varumärkeskommunikation och copywriting. Skapa engagerande varumärkesbeskrivningar som är professionella, säljande och informativa. Fokusera på varumärkets unika värde och målgrupp.`,
     promptTranslateDirect: `Du är en professionell översättare. Översätt svensk text till {targetLang}.
 
 Regler:
@@ -62,6 +67,7 @@ Regler:
 - Översätt endast textnoder
 - Temperatur: 0 (exakt översättning)`,
     exampleProductImportTokens: null,
+    exampleBrandsImportTokens: null,
     glossary: null
   };
 }

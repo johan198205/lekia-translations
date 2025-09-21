@@ -7,8 +7,10 @@ const updateSettingsSchema = z.object({
   apiKey: z.string().optional(),
   openaiModel: z.string().optional(),
   promptOptimizeSv: z.string().optional(),
+  promptOptimizeBrandsSv: z.string().optional(),
   promptTranslateDirect: z.string().optional(),
   exampleProductImportTokens: z.string().optional(),
+  exampleBrandsImportTokens: z.string().optional(),
   translationLanguages: z.string().optional(),
   originalLanguage: z.string().nullable().optional(),
   glossary: z.string().optional()
@@ -29,8 +31,10 @@ export async function GET() {
         hasKey: false,
         openaiModel: 'gpt-4o-mini',
         promptOptimizeSv: '',
+        promptOptimizeBrandsSv: null,
         promptTranslateDirect: '',
         exampleProductImportTokens: null,
+        exampleBrandsImportTokens: null,
         translationLanguages: null,
         originalLanguage: null,
         glossary: null,
@@ -42,8 +46,10 @@ export async function GET() {
       hasKey: !!settings.openaiApiKeyEnc,
       openaiModel: settings.openaiModel,
       promptOptimizeSv: settings.promptOptimizeSv,
+      promptOptimizeBrandsSv: settings.promptOptimizeBrandsSv,
       promptTranslateDirect: settings.promptTranslateDirect,
       exampleProductImportTokens: settings.exampleProductImportTokens,
+      exampleBrandsImportTokens: settings.exampleBrandsImportTokens,
       translationLanguages: settings.translationLanguages,
       originalLanguage: settings.originalLanguage,
       glossary: settings.glossary,
@@ -91,6 +97,10 @@ export async function PUT(request: NextRequest) {
       updateData.promptOptimizeSv = validatedData.promptOptimizeSv;
     }
 
+    if (validatedData.promptOptimizeBrandsSv !== undefined) {
+      updateData.promptOptimizeBrandsSv = validatedData.promptOptimizeBrandsSv;
+    }
+
     if (validatedData.promptTranslateDirect !== undefined) {
       updateData.promptTranslateDirect = validatedData.promptTranslateDirect;
     }
@@ -109,6 +119,23 @@ export async function PUT(request: NextRequest) {
         }
       } else {
         updateData.exampleProductImportTokens = null;
+      }
+    }
+
+    if (validatedData.exampleBrandsImportTokens !== undefined) {
+      // Validate that it's valid JSON if provided
+      if (validatedData.exampleBrandsImportTokens && validatedData.exampleBrandsImportTokens.trim()) {
+        try {
+          JSON.parse(validatedData.exampleBrandsImportTokens);
+          updateData.exampleBrandsImportTokens = validatedData.exampleBrandsImportTokens;
+        } catch (error) {
+          return NextResponse.json(
+            { error: 'Invalid JSON format for exampleBrandsImportTokens' },
+            { status: 400 }
+          );
+        }
+      } else {
+        updateData.exampleBrandsImportTokens = null;
       }
     }
 
@@ -189,8 +216,10 @@ export async function PUT(request: NextRequest) {
       const createData: any = {
         openaiModel: updateData.openaiModel || 'gpt-4o-mini',
         promptOptimizeSv: updateData.promptOptimizeSv || '',
+        promptOptimizeBrandsSv: updateData.promptOptimizeBrandsSv || null,
         promptTranslateDirect: updateData.promptTranslateDirect || '',
         exampleProductImportTokens: updateData.exampleProductImportTokens || null,
+        exampleBrandsImportTokens: updateData.exampleBrandsImportTokens || null,
         translationLanguages: updateData.translationLanguages || null,
         originalLanguage: updateData.originalLanguage || null,
         glossary: updateData.glossary || null
@@ -210,8 +239,10 @@ export async function PUT(request: NextRequest) {
       hasKey: !!settings.openaiApiKeyEnc,
       openaiModel: settings.openaiModel,
       promptOptimizeSv: settings.promptOptimizeSv,
+      promptOptimizeBrandsSv: settings.promptOptimizeBrandsSv,
       promptTranslateDirect: settings.promptTranslateDirect,
       exampleProductImportTokens: settings.exampleProductImportTokens,
+      exampleBrandsImportTokens: settings.exampleBrandsImportTokens,
       translationLanguages: settings.translationLanguages,
       originalLanguage: settings.originalLanguage,
       glossary: settings.glossary,

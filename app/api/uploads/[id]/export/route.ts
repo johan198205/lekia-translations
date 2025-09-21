@@ -56,7 +56,24 @@ export async function GET(
         where: {
           upload_id: uploadId
         },
-        orderBy: { updated_at: 'desc' }
+        orderBy: { created_at: 'asc' } // Use creation order to match original file
+      })
+      
+      // Sort by original row number if available in raw_data
+      products.sort((a, b) => {
+        try {
+          const aRawData = a.raw_data ? JSON.parse(a.raw_data) : null
+          const bRawData = b.raw_data ? JSON.parse(b.raw_data) : null
+          
+          if (aRawData && bRawData && aRawData.__original_row_number__ && bRawData.__original_row_number__) {
+            return aRawData.__original_row_number__ - bRawData.__original_row_number__
+          }
+        } catch (error) {
+          console.warn('Failed to parse raw_data for sorting:', error)
+        }
+        
+        // Fallback to created_at order
+        return new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
       })
 
       // No deduplication needed - each product has a unique ID
@@ -66,63 +83,248 @@ export async function GET(
       const workbook = new ExcelJS.Workbook()
       const worksheet = workbook.addWorksheet('Produkter')
       
-      // Build dynamic headers
-      const headers = [
-        { header: 'Produktnamn', key: 'name', width: 30 },
-        { header: 'Beskrivning (SV)', key: 'description', width: 50 },
-        { header: 'Optimerad text (SV)', key: 'optimized', width: 50 }
-      ]
+      // Use raw_data from first product to determine original structure
+      let originalHeaders: string[] = []
+      let hasRawData = false
       
-      // Add dynamic translation columns
-      translationLanguages.forEach(langCode => {
+      if (products.length > 0 && products[0].raw_data) {
+        try {
+          const rawData = JSON.parse(products[0].raw_data)
+          originalHeaders = Object.keys(rawData).filter(key => key !== '__original_row_number__')
+          hasRawData = true
+        } catch (error) {
+          console.warn('Failed to parse raw_data for headers:', error)
+        }
+      }
+      
+      // Build headers based on original structure
+      let headers: any[] = []
+      if (hasRawData && originalHeaders.length > 0) {
+        // Use original column structure
+        originalHeaders.forEach(header => {
+          headers.push({
+            header: header,
+            key: header,
+            width: 40
+          })
+        })
+        
+        // Add optimized and translation columns after original columns
         headers.push({
-          header: `Beskrivning (${langCode.toUpperCase()})`,
-          key: `description_${langCode}`,
+          header: 'Optimerad text (SV)',
+          key: 'optimized_sv',
           width: 50
         })
-      })
-      
-      headers.push(
-        { header: 'Status', key: 'status', width: 20 },
-        { header: 'Felmeddelande', key: 'error', width: 30 }
-      )
+        
+        // Add dynamic translation columns with proper locale mapping
+        translationLanguages.forEach(langCode => {
+          // Map internal language codes to proper locale format
+          const localeMap: Record<string, string> = {
+            'da': 'da-DK',
+            'no': 'nb-NO',  // Use nb-NO to match import format
+            'en': 'en-US',
+            'de': 'de-DE',
+            'fr': 'fr-FR',
+            'es': 'es-ES',
+            'it': 'it-IT',
+            'pt': 'pt-PT',
+            'nl': 'nl-NL',
+            'pl': 'pl-PL',
+            'ru': 'ru-RU',
+            'fi': 'fi-FI'
+          }
+          
+          const locale = localeMap[langCode] || `${langCode}-${langCode.toUpperCase()}`
+          headers.push({
+            header: `Beskrivning (${locale})`,
+            key: `description_${langCode}`,
+            width: 50
+          })
+        })
+      } else {
+        // Fallback to default structure
+        headers = [
+          { header: 'Produktnamn', key: 'name', width: 30 },
+          { header: 'Beskrivning (SV)', key: 'description', width: 50 },
+          { header: 'Optimerad text (SV)', key: 'optimized', width: 50 }
+        ]
+        
+        // Add dynamic translation columns with proper locale mapping
+        translationLanguages.forEach(langCode => {
+          // Map internal language codes to proper locale format
+          const localeMap: Record<string, string> = {
+            'da': 'da-DK',
+            'no': 'nb-NO',  // Use nb-NO to match import format
+            'en': 'en-US',
+            'de': 'de-DE',
+            'fr': 'fr-FR',
+            'es': 'es-ES',
+            'it': 'it-IT',
+            'pt': 'pt-PT',
+            'nl': 'nl-NL',
+            'pl': 'pl-PL',
+            'ru': 'ru-RU',
+            'fi': 'fi-FI'
+          }
+          
+          const locale = localeMap[langCode] || `${langCode}-${langCode.toUpperCase()}`
+          headers.push({
+            header: `Beskrivning (${locale})`,
+            key: `description_${langCode}`,
+            width: 50
+          })
+        })
+        
+      }
       
       worksheet.columns = headers
 
       // Add data rows
       products.forEach(product => {
-        const rowData: any = {
-          name: product.name_sv,
-          description: product.description_sv,
-          optimized: product.optimized_sv || '',
-          status: product.status,
-          error: product.error_message || ''
-        }
+        let rowData: any = {}
         
-        // Add translations from the new translations field
-        if (product.translations) {
+        if (hasRawData && product.raw_data) {
           try {
-            const translations = JSON.parse(product.translations)
-            translationLanguages.forEach(langCode => {
-              rowData[`description_${langCode}`] = translations[langCode] || ''
-            })
+            // Start with original raw data
+            rowData = JSON.parse(product.raw_data)
+            
+            // Remove internal fields that shouldn't be exported
+            delete rowData['__original_row_number__']
+            
+            // Add optimized text
+            rowData['optimized_sv'] = product.optimized_sv || ''
+            
+            // Override with translations where available
+            if (product.translations) {
+              const translations = JSON.parse(product.translations)
+              translationLanguages.forEach(langCode => {
+                // Map internal language codes to proper locale format for column names
+                const localeMap: Record<string, string> = {
+                  'da': 'da-DK',
+                  'no': 'nb-NO',  // Use nb-NO to match import format
+                  'en': 'en-US',
+                  'de': 'de-DE',
+                  'fr': 'fr-FR',
+                  'es': 'es-ES',
+                  'it': 'it-IT',
+                  'pt': 'pt-PT',
+                  'nl': 'nl-NL',
+                  'pl': 'pl-PL',
+                  'ru': 'ru-RU',
+                  'fi': 'fi-FI'
+                }
+                
+                rowData[`description_${langCode}`] = translations[langCode] || ''
+              })
+            } else {
+              // Fallback to legacy fields
+              translationLanguages.forEach(langCode => {
+                // Map internal language codes to proper locale format for column names
+                const localeMap: Record<string, string> = {
+                  'da': 'da-DK',
+                  'no': 'nb-NO',  // Use nb-NO to match import format
+                  'en': 'en-US',
+                  'de': 'de-DE',
+                  'fr': 'fr-FR',
+                  'es': 'es-ES',
+                  'it': 'it-IT',
+                  'pt': 'pt-PT',
+                  'nl': 'nl-NL',
+                  'pl': 'pl-PL',
+                  'ru': 'ru-RU',
+                  'fi': 'fi-FI'
+                }
+                
+                rowData[`description_${langCode}`] = ''
+                if (langCode === 'da' && product.translated_da) {
+                  rowData[`description_${langCode}`] = product.translated_da
+                } else if (langCode === 'no' && product.translated_no) {
+                  rowData[`description_${langCode}`] = product.translated_no
+                } else if (langCode === 'en' && product.translated_en) {
+                  rowData[`description_${langCode}`] = product.translated_en
+                } else if (langCode === 'de' && product.translated_de) {
+                  rowData[`description_${langCode}`] = product.translated_de
+                }
+              })
+            }
           } catch (error) {
-            console.warn('Failed to parse translations for product:', product.id)
-            translationLanguages.forEach(langCode => {
-              rowData[`description_${langCode}`] = ''
-            })
+            console.warn('Failed to parse raw_data for product:', product.id)
+            // Fallback to default structure
+            rowData = {
+              name: product.name_sv,
+              description: product.description_sv,
+              optimized: product.optimized_sv || '',
+              status: product.status,
+              error: product.error_message || ''
+            }
           }
         } else {
-          // Fallback to legacy fields for backward compatibility
-          translationLanguages.forEach(langCode => {
-            if (langCode === 'da' && product.translated_da) {
-              rowData[`description_${langCode}`] = product.translated_da
-            } else if (langCode === 'no' && product.translated_no) {
-              rowData[`description_${langCode}`] = product.translated_no
-            } else {
-              rowData[`description_${langCode}`] = ''
+          // Fallback to default structure
+          rowData = {
+            name: product.name_sv,
+            description: product.description_sv,
+            optimized: product.optimized_sv || ''
+          }
+          
+          // Add translations from the new translations field
+          if (product.translations) {
+            try {
+              const translations = JSON.parse(product.translations)
+              translationLanguages.forEach(langCode => {
+                // Map internal language codes to proper locale format for column names
+                const localeMap: Record<string, string> = {
+                  'da': 'da-DK',
+                  'no': 'nb-NO',  // Use nb-NO to match import format
+                  'en': 'en-US',
+                  'de': 'de-DE',
+                  'fr': 'fr-FR',
+                  'es': 'es-ES',
+                  'it': 'it-IT',
+                  'pt': 'pt-PT',
+                  'nl': 'nl-NL',
+                  'pl': 'pl-PL',
+                  'ru': 'ru-RU',
+                  'fi': 'fi-FI'
+                }
+                
+                const locale = localeMap[langCode] || `${langCode}-${langCode.toUpperCase()}`
+                rowData[locale] = translations[langCode] || ''
+              })
+            } catch (error) {
+              console.warn('Failed to parse translations for product:', product.id)
+              translationLanguages.forEach(langCode => {
+                rowData[`description_${langCode}`] = ''
+              })
             }
-          })
+          } else {
+            // Fallback to legacy fields for backward compatibility
+            translationLanguages.forEach(langCode => {
+              // Map internal language codes to proper locale format for column names
+              const localeMap: Record<string, string> = {
+                'da': 'da-DK',
+                'no': 'nb-NO',  // Use nb-NO to match import format
+                'en': 'en-US',
+                'de': 'de-DE',
+                'fr': 'fr-FR',
+                'es': 'es-ES',
+                'it': 'it-IT',
+                'pt': 'pt-PT',
+                'nl': 'nl-NL',
+                'pl': 'pl-PL',
+                'ru': 'ru-RU',
+                'fi': 'fi-FI'
+              }
+              
+              const locale = localeMap[langCode] || `${langCode}-${langCode.toUpperCase()}`
+              if (langCode === 'da' && product.translated_da) {
+                rowData[locale] = product.translated_da
+              } else if (langCode === 'no' && product.translated_no) {
+                rowData[locale] = product.translated_no
+              } else {
+                rowData[locale] = ''
+              }
+            })
+          }
         }
         
         worksheet.addRow(rowData)
@@ -134,43 +336,59 @@ export async function GET(
       return new NextResponse(buffer, {
         headers: {
           'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-          'Content-Disposition': `attachment; filename="${upload.filename}_upload_export.xlsx"`
+          'Content-Disposition': `attachment; filename="${upload.filename.replace('.xlsx', '')}_with_translations.xlsx"`
         }
       })
     } else {
-      // Export UI items
+      // Export UI items - recreate original Excel structure with translations
       const uiItems = await prisma.uIItem.findMany({
         where: {
           upload_id: uploadId
         },
-        orderBy: { updated_at: 'desc' }
+        orderBy: { created_at: 'asc' } // Use creation order to match original file
       })
 
-      // No deduplication needed - each UI item has a unique ID
+      // Get original locale structure from upload metadata
+      let originalLocales: string[] = []
+      try {
+        if (upload.meta) {
+          const metaData = JSON.parse(upload.meta)
+          if (metaData.locales) {
+            originalLocales = metaData.locales
+          }
+        }
+      } catch (error) {
+        console.warn('Failed to parse upload metadata for locales:', error)
+      }
+
+      // Fallback: get locales from UI items if metadata not available
+      if (originalLocales.length === 0) {
+        const allLocales = new Set<string>()
+        uiItems.forEach(item => {
+          try {
+            const values = JSON.parse(item.values)
+            Object.keys(values).forEach(locale => {
+              if (locale !== '__original_row_number__') {
+                allLocales.add(locale)
+              }
+            })
+          } catch (error) {
+            console.warn('Failed to parse UI item values:', error)
+          }
+        })
+        originalLocales = Array.from(allLocales).sort()
+      }
 
       const workbook = new ExcelJS.Workbook()
       const worksheet = workbook.addWorksheet('UI-element')
       
-      // Get all unique locales from all UI items
-      const allLocales = new Set<string>()
-      uiItems.forEach(item => {
-        try {
-          const values = JSON.parse(item.values)
-          Object.keys(values).forEach(locale => allLocales.add(locale))
-        } catch (error) {
-          console.warn('Failed to parse UI item values:', error)
-        }
-      })
-      
-      // Add headers
+      // Create headers matching original Excel structure
       const columns = [
-        { header: 'Namn', key: 'name', width: 30 },
-        { header: 'Status', key: 'status', width: 20 },
-        { header: 'Felmeddelande', key: 'error', width: 30 }
+        { header: 'Name', key: 'name', width: 30 }
       ]
       
-      // Add locale columns
-      Array.from(allLocales).sort().forEach(locale => {
+      // Add locale columns in original order
+      originalLocales.forEach(locale => {
         columns.push({ header: locale, key: locale, width: 40 })
       })
       
@@ -181,24 +399,22 @@ export async function GET(
         try {
           const values = JSON.parse(item.values)
           const row: any = {
-            name: item.name,
-            status: item.status,
-            error: item.error_message || ''
+            name: item.name
           }
           
-          // Add each locale value
-          Object.entries(values).forEach(([locale, value]) => {
-            row[locale] = value || ''
+          // Add each locale value in original column order
+          originalLocales.forEach(locale => {
+            row[locale] = values[locale] || ''
           })
           
           worksheet.addRow(row)
         } catch (error) {
           console.warn('Failed to parse UI item values for export:', error)
-          worksheet.addRow({
-            name: item.name,
-            status: item.status,
-            error: item.error_message || ''
+          const row: any = { name: item.name }
+          originalLocales.forEach(locale => {
+            row[locale] = ''
           })
+          worksheet.addRow(row)
         }
       })
 
@@ -208,7 +424,7 @@ export async function GET(
       return new NextResponse(buffer, {
         headers: {
           'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-          'Content-Disposition': `attachment; filename="${upload.filename}_ui_upload_export.xlsx"`
+          'Content-Disposition': `attachment; filename="${upload.filename.replace('.xlsx', '')}_with_translations.xlsx"`
         }
       })
     }

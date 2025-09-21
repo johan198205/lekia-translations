@@ -21,7 +21,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (!['product_texts', 'ui_strings'].includes(jobType)) {
+    if (!['product_texts', 'ui_strings', 'brands'].includes(jobType)) {
       return NextResponse.json(
         { error: 'Invalid job type' },
         { status: 400 }
@@ -56,7 +56,7 @@ export async function POST(request: NextRequest) {
     const buffer = Buffer.from(await file.arrayBuffer());
 
     // Normalize Excel data
-    const result = await normalize(buffer, jobType as 'product_texts' | 'ui_strings');
+    const result = await normalize(buffer, jobType as 'product_texts' | 'ui_strings' | 'brands');
 
     // Prepare meta data with tokens
     let metaData = null;
@@ -81,22 +81,22 @@ export async function POST(request: NextRequest) {
     });
 
     if (jobType === 'product_texts' && result.products) {
-      // Create products with upload_id (no batch_id initially)
-      const products = await Promise.all(
-        result.products.map(async (product) => {
-          return await prisma.product.create({
-            data: {
-              name_sv: product.name_sv,
-              description_sv: product.description_sv,
-              attributes: product.attributes,
-              tone_hint: product.tone_hint,
-              raw_data: product.raw_data ? JSON.stringify(product.raw_data) : null,
-              status: 'pending',
-              upload_id: upload.id
-            }
-          });
-        })
-      );
+      // Create products with upload_id (no batch_id initially) - sequentially to preserve order
+      const products = [];
+      for (const product of result.products) {
+        const createdProduct = await prisma.product.create({
+          data: {
+            name_sv: product.name_sv,
+            description_sv: product.description_sv,
+            attributes: product.attributes,
+            tone_hint: product.tone_hint,
+            raw_data: product.raw_data ? JSON.stringify(product.raw_data) : null,
+            status: 'pending',
+            upload_id: upload.id
+          }
+        });
+        products.push(createdProduct);
+      }
 
       console.log(`[UPLOAD] Created ${products.length} products for upload ${upload.id}`);
       console.log(`[UPLOAD] Product IDs:`, products.map(p => p.id));
@@ -125,19 +125,19 @@ export async function POST(request: NextRequest) {
         meta: result.meta
       });
     } else if (jobType === 'ui_strings' && result.uiStrings) {
-      // Create UI items with upload_id (no batch_id initially)
-      const uiItems = await Promise.all(
-        result.uiStrings.map(async (uiString) => {
-          return await prisma.uIItem.create({
-            data: {
-              name: uiString.name,
-              values: JSON.stringify(uiString.values),
-              status: 'pending',
-              upload_id: upload.id
-            }
-          });
-        })
-      );
+      // Create UI items with upload_id (no batch_id initially) - sequentially to preserve order
+      const uiItems = [];
+      for (const uiString of result.uiStrings) {
+        const createdUIItem = await prisma.uIItem.create({
+          data: {
+            name: uiString.name,
+            values: JSON.stringify(uiString.values),
+            status: 'pending',
+            upload_id: upload.id
+          }
+        });
+        uiItems.push(createdUIItem);
+      }
 
       console.log(`[UPLOAD] Created ${uiItems.length} UI items for upload ${upload.id}`);
       console.log(`[UPLOAD] UI Item IDs:`, uiItems.map(item => item.id));
@@ -153,8 +153,52 @@ export async function POST(request: NextRequest) {
         uiStrings: uiItems.map(item => ({
           id: item.id,
           name: item.name,
-          values: JSON.parse(item.values),
+          values: item.values ? JSON.parse(item.values) : {},
           status: item.status
+        })),
+        meta: result.meta
+      });
+    } else if (jobType === 'brands' && result.brands) {
+      // Create brands with upload_id (no batch_id initially) - sequentially to preserve order
+      const brands = [];
+      for (const brand of result.brands) {
+        const createdBrand = await prisma.brand.create({
+          data: {
+            name_sv: brand.name_sv,
+            description_sv: brand.description_sv,
+            attributes: brand.attributes,
+            tone_hint: brand.tone_hint,
+            raw_data: brand.raw_data ? JSON.stringify(brand.raw_data) : null,
+            status: 'pending',
+            upload_id: upload.id
+          }
+        });
+        brands.push(createdBrand);
+      }
+
+      console.log(`[UPLOAD] Created ${brands.length} brands for upload ${upload.id}`);
+      console.log(`[UPLOAD] Brand IDs:`, brands.map(b => b.id));
+
+      // Verify brands were created by fetching them back
+      const verifyBrands = await prisma.brand.findMany({
+        where: { upload_id: upload.id }
+      });
+      console.log(`[UPLOAD] Verified ${verifyBrands.length} brands in database for upload ${upload.id}`);
+
+      return NextResponse.json({
+        uploadId: upload.id,
+        brands: brands.map(brand => ({
+          id: brand.id,
+          name_sv: brand.name_sv,
+          description_sv: brand.description_sv,
+          attributes: brand.attributes,
+          tone_hint: brand.tone_hint,
+          status: brand.status,
+          batch_id: brand.batch_id,
+          short_sv: brand.short_sv,
+          long_html_sv: brand.long_html_sv,
+          translations: brand.translations,
+          error_message: brand.error_message
         })),
         meta: result.meta
       });

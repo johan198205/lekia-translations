@@ -41,15 +41,12 @@ export async function GET(
     const skip = (page - 1) * pageSize
 
     if (jobType === 'product_texts') {
-      // Get all products from this upload, with deduplication
-      // Prefer products with the latest updated_at for deduplication
-      const products = await prisma.product.findMany({
+      // Get all products from this upload first, then sort, then paginate
+      const allProducts = await prisma.product.findMany({
         where: {
           upload_id: uploadId
         },
-        orderBy: { updated_at: 'desc' },
-        skip,
-        take: pageSize,
+        orderBy: { created_at: 'asc' },
         include: {
           batch: {
             select: {
@@ -60,25 +57,43 @@ export async function GET(
           }
         }
       })
+      
+      // Sort by original row number if available in raw_data
+      allProducts.sort((a, b) => {
+        try {
+          const aRawData = a.raw_data ? JSON.parse(a.raw_data) : null
+          const bRawData = b.raw_data ? JSON.parse(b.raw_data) : null
+          
+          if (aRawData && bRawData && aRawData.__original_row_number__ && bRawData.__original_row_number__) {
+            return aRawData.__original_row_number__ - bRawData.__original_row_number__
+          }
+        } catch (error) {
+          console.warn('Failed to parse raw_data for sorting:', error)
+        }
+        
+        // Fallback to created_at order
+        return new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+      })
+      
+      // Apply pagination after sorting
+      const products = allProducts.slice(skip, skip + pageSize)
 
       // No deduplication needed - each product has a unique ID
       // If there are duplicates in the Excel file, they should be shown as separate rows
       return NextResponse.json({
         items: products,
-        total: products.length,
+        total: allProducts.length,
         page,
         pageSize,
-        hasMore: products.length === pageSize
+        hasMore: skip + products.length < allProducts.length
       })
     } else {
-      // Get all UI items from this upload
-      const uiItems = await prisma.uIItem.findMany({
+      // Get all UI items from this upload first, then paginate
+      const allUIItems = await prisma.uIItem.findMany({
         where: {
           upload_id: uploadId
         },
-        orderBy: { updated_at: 'desc' },
-        skip,
-        take: pageSize,
+        orderBy: { created_at: 'asc' },
         include: {
           batch: {
             select: {
@@ -90,13 +105,16 @@ export async function GET(
         }
       })
 
+      // Apply pagination
+      const uiItems = allUIItems.slice(skip, skip + pageSize)
+
       // No deduplication needed - each UI item has a unique ID
       return NextResponse.json({
         items: uiItems,
-        total: uiItems.length,
+        total: allUIItems.length,
         page,
         pageSize,
-        hasMore: uiItems.length === pageSize
+        hasMore: skip + uiItems.length < allUIItems.length
       })
     }
   } catch (error) {

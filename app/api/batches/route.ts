@@ -4,7 +4,7 @@ import { z } from 'zod'
 
 const createBatchSchema = z.object({
   upload_id: z.string().min(1),
-  job_type: z.enum(['product_texts', 'ui_strings']),
+  job_type: z.enum(['product_texts', 'ui_strings', 'brands']),
   selected_ids: z.array(z.string()).min(1)
 })
 
@@ -48,8 +48,18 @@ export async function POST(request: NextRequest) {
           batch_id: batch.id
         }
       })
-    } else {
+    } else if (job_type === 'ui_strings') {
       await prisma.uIItem.updateMany({
+        where: {
+          id: { in: selected_ids },
+          upload_id: upload_id
+        },
+        data: {
+          batch_id: batch.id
+        }
+      })
+    } else if (job_type === 'brands') {
+      await prisma.brand.updateMany({
         where: {
           id: { in: selected_ids },
           upload_id: upload_id
@@ -91,7 +101,7 @@ export async function GET(request: NextRequest) {
 
     const whereClause = {
       deleted_at: null, // Only show non-deleted batches
-      ...(jobType ? { job_type: jobType as 'product_texts' | 'ui_strings' } : {})
+      ...(jobType ? { job_type: jobType as 'product_texts' | 'ui_strings' | 'brands' } : {})
     }
 
     const batches = await prisma.productBatch.findMany({
@@ -105,6 +115,12 @@ export async function GET(request: NextRequest) {
           }
         },
         ui_items: {
+          select: {
+            id: true,
+            status: true
+          }
+        },
+        brands: {
           select: {
             id: true,
             status: true

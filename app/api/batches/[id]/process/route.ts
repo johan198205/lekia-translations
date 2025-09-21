@@ -34,6 +34,7 @@ export async function POST(
     const jobConfig = {
       model: openaiConfig.model,
       promptOptimizeSv: openaiConfig.promptOptimizeSv,
+      promptOptimizeBrandsSv: openaiConfig.promptOptimizeBrandsSv,
       promptTranslateDirect: openaiConfig.promptTranslateDirect
     }
     
@@ -70,8 +71,8 @@ export async function POST(
 
     console.log(`[PROCESS] Batch found: ${batch.id}, job_type: ${batch.job_type}`);
 
-    // Support both product_texts and ui_strings
-    if (batch.job_type !== 'product_texts' && batch.job_type !== 'ui_strings') {
+    // Support product_texts, ui_strings, and brands
+    if (batch.job_type !== 'product_texts' && batch.job_type !== 'ui_strings' && batch.job_type !== 'brands') {
       return NextResponse.json(
         { error: 'Unsupported job type' },
         { status: 400 }
@@ -400,6 +401,180 @@ export async function POST(
           
           // Still count as completed for progress tracking
           completedJobs += targetLangs.length;
+        }
+      }
+    } else if (batch.job_type === 'brands') {
+      // Get brands to process
+      const batchWithBrands = await prisma.productBatch.findUnique({
+        where: { id: batchId },
+        include: { brands: true }
+      });
+
+      if (!batchWithBrands) {
+        return NextResponse.json(
+          { error: 'Batch not found' },
+          { status: 404 }
+        )
+      }
+
+      itemsToProcess = indices.length > 0 
+        ? indices.map(index => batchWithBrands.brands[index]).filter(Boolean)
+        : batchWithBrands.brands;
+
+      if (itemsToProcess.length === 0) {
+        return NextResponse.json(
+          { error: 'No brands selected for processing' },
+          { status: 400 }
+        )
+      }
+
+      console.log(`[PROCESS] Processing ${itemsToProcess.length} brands`);
+      console.log(`[PROCESS] Optimize SV: ${shouldOptimize}`);
+      console.log(`[PROCESS] Target languages: ${targetLangs.length > 0 ? targetLangs.join(', ') : 'none (optimization only)'}`);
+
+      // Calculate total jobs for progress tracking
+      totalJobs = itemsToProcess.length * (shouldOptimize ? 1 : 0) + 
+                  itemsToProcess.length * targetLangs.length * 2; // 2 translations per brand (short + long)
+
+      console.log(`[PROCESS] Total jobs to complete: ${totalJobs}`);
+
+      // Process each brand
+      for (let i = 0; i < itemsToProcess.length; i++) {
+        const brand = itemsToProcess[i];
+        let shortSv = '';
+        let longHtmlSv = '';
+
+        try {
+          // Step 1: Optimize Swedish text if requested
+          if (shouldOptimize) {
+            console.log(`[PROCESS] Optimizing brand: ${brand.name_sv}`);
+            
+            // Set status to optimizing
+            await prisma.brand.update({
+              where: { id: brand.id },
+              data: { status: 'optimizing' }
+            });
+
+            // Use LLM adapter for brand optimization
+            const { optimizeBrand } = await import('@/lib/llm/adapter');
+            const optimizedResult = await optimizeBrand({
+              nameSv: brand.name_sv,
+              descriptionSv: brand.description_sv,
+              attributes: brand.attributes,
+              toneHint: brand.tone_hint || undefined,
+              rawData: brand.raw_data || undefined
+            }, {
+              ...clientPromptSettings.optimize,
+              model: jobConfig.model,
+              promptOptimizeBrandsSv: jobConfig.promptOptimizeBrandsSv,
+              uploadMeta: batch.upload?.meta || undefined,
+              settingsTokens: openaiConfig.exampleBrandsImportTokens || undefined
+            });
+
+            shortSv = optimizedResult.short_sv;
+            longHtmlSv = optimizedResult.long_html_sv;
+
+            // Update brand with optimized text
+            await prisma.brand.update({
+              where: { id: brand.id },
+              data: {
+                short_sv: shortSv,
+                long_html_sv: longHtmlSv,
+                status: 'optimized'
+              }
+            });
+
+            completedJobs++;
+            console.log(`[PROCESS] Brand optimization completed for ${brand.name_sv}`);
+          } else {
+            // Use existing optimized text or original description
+            shortSv = brand.short_sv || brand.description_sv.substring(0, 200);
+            longHtmlSv = brand.long_html_sv || `<p>${brand.description_sv}</p>`;
+          }
+
+          // Step 2: Translate to target languages if requested
+          if (targetLangs.length > 0) {
+            console.log(`[PROCESS] Translating brand: ${brand.name_sv}`);
+            
+            // Set status to translating
+            await prisma.brand.update({
+              where: { id: brand.id },
+              data: { status: 'translating' }
+            });
+
+            const translations: Record<string, { short: string; long_html: string }> = {};
+
+            for (const language of targetLangs) {
+              try {
+                console.log(`[PROCESS] Translating ${brand.name_sv} to ${language}`);
+                
+                // Translate short description
+                const { translateTo } = await import('@/lib/llm/adapter');
+                const translatedShort = await translateTo({
+                  text: shortSv,
+                  target: language
+                }, {
+                  model: jobConfig.model,
+                  sourceLang: 'sv'
+                });
+
+                // Translate long HTML description
+                const translatedLong = await translateTo({
+                  text: longHtmlSv,
+                  target: language
+                }, {
+                  model: jobConfig.model,
+                  sourceLang: 'sv'
+                });
+
+                translations[language] = {
+                  short: translatedShort,
+                  long_html: translatedLong
+                };
+                
+                completedJobs += 2; // Count both translations
+                console.log(`[PROCESS] Translation to ${language} completed for ${brand.name_sv}`);
+              } catch (error) {
+                console.error(`[PROCESS] Error translating ${brand.name_sv} to ${language}:`, error);
+                // Continue with other languages even if one fails
+                completedJobs += 2; // Still count as completed for progress tracking
+              }
+            }
+
+            // Update brand with all translations
+            await prisma.brand.update({
+              where: { id: brand.id },
+              data: {
+                translations: JSON.stringify(translations),
+                status: 'completed'
+              }
+            });
+
+            console.log(`[PROCESS] Brand ${brand.name_sv} processing completed`);
+          } else {
+            // No translation needed, just mark as completed if optimization was done
+            if (shouldOptimize) {
+              await prisma.brand.update({
+                where: { id: brand.id },
+                data: { status: 'completed' }
+              });
+            }
+            console.log(`[PROCESS] Brand ${brand.name_sv} optimization completed (no translation)`);
+          }
+
+        } catch (error) {
+          console.error(`[PROCESS] Error processing brand ${brand.name_sv}:`, error);
+          await prisma.brand.update({
+            where: { id: brand.id },
+            data: {
+              status: 'error',
+              error_message: error instanceof Error ? error.message : 'Processing failed'
+            }
+          });
+          
+          // Still count as completed for progress tracking
+          completedJobs += shouldOptimize ? 1 : 0;
+          completedJobs += targetLangs.length * 2;
         }
       }
     }

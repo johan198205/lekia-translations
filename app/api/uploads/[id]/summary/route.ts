@@ -55,7 +55,24 @@ export async function GET(
         where: {
           upload_id: uploadId
         },
-        orderBy: { updated_at: 'desc' }
+        orderBy: { created_at: 'asc' }
+      })
+      
+      // Sort by original row number if available in raw_data
+      products.sort((a, b) => {
+        try {
+          const aRawData = a.raw_data ? JSON.parse(a.raw_data) : null
+          const bRawData = b.raw_data ? JSON.parse(b.raw_data) : null
+          
+          if (aRawData && bRawData && aRawData.__original_row_number__ && bRawData.__original_row_number__) {
+            return aRawData.__original_row_number__ - bRawData.__original_row_number__
+          }
+        } catch (error) {
+          console.warn('Failed to parse raw_data for sorting:', error)
+        }
+        
+        // Fallback to created_at order
+        return new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
       })
 
       // No deduplication needed - each product has a unique ID
@@ -112,7 +129,7 @@ export async function GET(
         where: {
           upload_id: uploadId
         },
-        orderBy: { updated_at: 'desc' }
+        orderBy: { created_at: 'asc' }
       })
 
       // Deduplicate by name, keep most recently updated

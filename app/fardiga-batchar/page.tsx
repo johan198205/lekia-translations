@@ -479,22 +479,22 @@ export default function FardigaBatcharPage() {
                   </div>
                   <button
                     onClick={handleExport}
-                    disabled={isExporting}
+                    disabled={isExporting || !uploadSummary || uploadSummary.optimizedCount === 0}
                     style={{
-                      background: isExporting ? '#9ca3af' : '#10b981',
+                      background: isExporting ? '#9ca3af' : (uploadSummary && uploadSummary.optimizedCount > 0) ? '#10b981' : '#d1d5db',
                       color: 'white',
                       padding: '0.75rem 1.5rem',
                       borderRadius: '0.5rem',
                       border: 'none',
                       fontSize: '0.875rem',
                       fontWeight: '500',
-                      cursor: isExporting ? 'not-allowed' : 'pointer',
+                      cursor: (isExporting || !uploadSummary || uploadSummary.optimizedCount === 0) ? 'not-allowed' : 'pointer',
                       display: 'flex',
                       alignItems: 'center',
                       gap: '0.5rem',
                       transition: 'all 0.2s ease'
                     }}
-                    title="Exportera Excel (upload)"
+                    title={uploadSummary && uploadSummary.optimizedCount > 0 ? "Exportera Excel (upload)" : "Inga färdiga produkter att exportera"}
                   >
                     {isExporting ? '⏳' : '📊'} {isExporting ? 'Exporterar...' : 'Exportera Excel (upload)'}
                   </button>
