@@ -11,6 +11,11 @@ export interface OpenAIConfig {
   promptOptimizeSv: string;
   promptOptimizeBrandsSv?: string | null;
   promptTranslateDirect: string;
+  promptNameSv?: string | null;
+  promptShortDescriptionSv?: string | null;
+  promptDescriptionHtmlSv?: string | null;
+  promptSeoTitleSv?: string | null;
+  promptSeoDescriptionSv?: string | null;
   exampleProductImportTokens?: string | null;
   exampleBrandsImportTokens?: string | null;
   glossary?: string | null;
@@ -42,6 +47,11 @@ export async function getOpenAIConfig(): Promise<OpenAIConfig> {
       promptOptimizeSv: settings.promptOptimizeSv,
       promptOptimizeBrandsSv: settings.promptOptimizeBrandsSv,
       promptTranslateDirect: settings.promptTranslateDirect,
+      promptNameSv: settings.promptNameSv,
+      promptShortDescriptionSv: settings.promptShortDescriptionSv,
+      promptDescriptionHtmlSv: settings.promptDescriptionHtmlSv,
+      promptSeoTitleSv: settings.promptSeoTitleSv,
+      promptSeoDescriptionSv: settings.promptSeoDescriptionSv,
       exampleProductImportTokens: settings.exampleProductImportTokens,
       exampleBrandsImportTokens: settings.exampleBrandsImportTokens,
       glossary: settings.glossary
@@ -66,6 +76,11 @@ Regler:
 - Behåll {{...}}, radbrytningar, taggar och ordningen exakt
 - Översätt endast textnoder
 - Temperatur: 0 (exakt översättning)`,
+    promptNameSv: null,
+    promptShortDescriptionSv: null,
+    promptDescriptionHtmlSv: null,
+    promptSeoTitleSv: null,
+    promptSeoDescriptionSv: null,
     exampleProductImportTokens: null,
     exampleBrandsImportTokens: null,
     glossary: null

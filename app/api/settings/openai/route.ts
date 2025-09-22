@@ -9,6 +9,11 @@ const updateSettingsSchema = z.object({
   promptOptimizeSv: z.string().optional(),
   promptOptimizeBrandsSv: z.string().optional(),
   promptTranslateDirect: z.string().optional(),
+  promptNameSv: z.string().optional(),
+  promptShortDescriptionSv: z.string().optional(),
+  promptDescriptionHtmlSv: z.string().optional(),
+  promptSeoTitleSv: z.string().optional(),
+  promptSeoDescriptionSv: z.string().optional(),
   exampleProductImportTokens: z.string().optional(),
   exampleBrandsImportTokens: z.string().optional(),
   translationLanguages: z.string().optional(),
@@ -33,6 +38,11 @@ export async function GET() {
         promptOptimizeSv: '',
         promptOptimizeBrandsSv: null,
         promptTranslateDirect: '',
+        promptNameSv: null,
+        promptShortDescriptionSv: null,
+        promptDescriptionHtmlSv: null,
+        promptSeoTitleSv: null,
+        promptSeoDescriptionSv: null,
         exampleProductImportTokens: null,
         exampleBrandsImportTokens: null,
         translationLanguages: null,
@@ -48,6 +58,11 @@ export async function GET() {
       promptOptimizeSv: settings.promptOptimizeSv,
       promptOptimizeBrandsSv: settings.promptOptimizeBrandsSv,
       promptTranslateDirect: settings.promptTranslateDirect,
+      promptNameSv: settings.promptNameSv,
+      promptShortDescriptionSv: settings.promptShortDescriptionSv,
+      promptDescriptionHtmlSv: settings.promptDescriptionHtmlSv,
+      promptSeoTitleSv: settings.promptSeoTitleSv,
+      promptSeoDescriptionSv: settings.promptSeoDescriptionSv,
       exampleProductImportTokens: settings.exampleProductImportTokens,
       exampleBrandsImportTokens: settings.exampleBrandsImportTokens,
       translationLanguages: settings.translationLanguages,
@@ -103,6 +118,26 @@ export async function PUT(request: NextRequest) {
 
     if (validatedData.promptTranslateDirect !== undefined) {
       updateData.promptTranslateDirect = validatedData.promptTranslateDirect;
+    }
+
+    if (validatedData.promptNameSv !== undefined) {
+      updateData.promptNameSv = validatedData.promptNameSv;
+    }
+
+    if (validatedData.promptShortDescriptionSv !== undefined) {
+      updateData.promptShortDescriptionSv = validatedData.promptShortDescriptionSv;
+    }
+
+    if (validatedData.promptDescriptionHtmlSv !== undefined) {
+      updateData.promptDescriptionHtmlSv = validatedData.promptDescriptionHtmlSv;
+    }
+
+    if (validatedData.promptSeoTitleSv !== undefined) {
+      updateData.promptSeoTitleSv = validatedData.promptSeoTitleSv;
+    }
+
+    if (validatedData.promptSeoDescriptionSv !== undefined) {
+      updateData.promptSeoDescriptionSv = validatedData.promptSeoDescriptionSv;
     }
 
     if (validatedData.exampleProductImportTokens !== undefined) {
@@ -218,6 +253,11 @@ export async function PUT(request: NextRequest) {
         promptOptimizeSv: updateData.promptOptimizeSv || '',
         promptOptimizeBrandsSv: updateData.promptOptimizeBrandsSv || null,
         promptTranslateDirect: updateData.promptTranslateDirect || '',
+        promptNameSv: updateData.promptNameSv || null,
+        promptShortDescriptionSv: updateData.promptShortDescriptionSv || null,
+        promptDescriptionHtmlSv: updateData.promptDescriptionHtmlSv || null,
+        promptSeoTitleSv: updateData.promptSeoTitleSv || null,
+        promptSeoDescriptionSv: updateData.promptSeoDescriptionSv || null,
         exampleProductImportTokens: updateData.exampleProductImportTokens || null,
         exampleBrandsImportTokens: updateData.exampleBrandsImportTokens || null,
         translationLanguages: updateData.translationLanguages || null,
@@ -241,6 +281,11 @@ export async function PUT(request: NextRequest) {
       promptOptimizeSv: settings.promptOptimizeSv,
       promptOptimizeBrandsSv: settings.promptOptimizeBrandsSv,
       promptTranslateDirect: settings.promptTranslateDirect,
+      promptNameSv: settings.promptNameSv,
+      promptShortDescriptionSv: settings.promptShortDescriptionSv,
+      promptDescriptionHtmlSv: settings.promptDescriptionHtmlSv,
+      promptSeoTitleSv: settings.promptSeoTitleSv,
+      promptSeoDescriptionSv: settings.promptSeoDescriptionSv,
       exampleProductImportTokens: settings.exampleProductImportTokens,
       exampleBrandsImportTokens: settings.exampleBrandsImportTokens,
       translationLanguages: settings.translationLanguages,

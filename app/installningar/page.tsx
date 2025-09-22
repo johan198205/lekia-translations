@@ -9,6 +9,11 @@ interface OpenAISettings {
   promptOptimizeSv: string;
   promptOptimizeBrandsSv: string | null;
   promptTranslateDirect: string;
+  promptNameSv: string | null;
+  promptShortDescriptionSv: string | null;
+  promptDescriptionHtmlSv: string | null;
+  promptSeoTitleSv: string | null;
+  promptSeoDescriptionSv: string | null;
   exampleProductImportTokens: string | null;
   exampleBrandsImportTokens: string | null;
   translationLanguages: string | null;
@@ -41,7 +46,12 @@ export default function InstallningarPage() {
     apiKey: '',
     openaiModel: 'gpt-4o-mini',
     promptOptimizeSv: '',
-    promptOptimizeBrandsSv: ''
+    promptOptimizeBrandsSv: '',
+    promptNameSv: '',
+    promptShortDescriptionSv: '',
+    promptDescriptionHtmlSv: '',
+    promptSeoTitleSv: '',
+    promptSeoDescriptionSv: ''
   });
   
   const [showApiKeyInput, setShowApiKeyInput] = useState(false);
@@ -124,7 +134,12 @@ export default function InstallningarPage() {
           apiKey: '',
           openaiModel: data.openaiModel,
           promptOptimizeSv: data.promptOptimizeSv,
-          promptOptimizeBrandsSv: data.promptOptimizeBrandsSv || ''
+          promptOptimizeBrandsSv: data.promptOptimizeBrandsSv || '',
+          promptNameSv: data.promptNameSv || '',
+          promptShortDescriptionSv: data.promptShortDescriptionSv || '',
+          promptDescriptionHtmlSv: data.promptDescriptionHtmlSv || '',
+          promptSeoTitleSv: data.promptSeoTitleSv || '',
+          promptSeoDescriptionSv: data.promptSeoDescriptionSv || ''
         });
         
         // Parse existing example tokens if they exist
@@ -237,7 +252,12 @@ export default function InstallningarPage() {
       formData.apiKey.trim() !== '' ||
       formData.openaiModel !== settings.openaiModel ||
       formData.promptOptimizeSv !== settings.promptOptimizeSv ||
-      formData.promptOptimizeBrandsSv !== (settings.promptOptimizeBrandsSv || '')
+      formData.promptOptimizeBrandsSv !== (settings.promptOptimizeBrandsSv || '') ||
+      formData.promptNameSv !== (settings.promptNameSv || '') ||
+      formData.promptShortDescriptionSv !== (settings.promptShortDescriptionSv || '') ||
+      formData.promptDescriptionHtmlSv !== (settings.promptDescriptionHtmlSv || '') ||
+      formData.promptSeoTitleSv !== (settings.promptSeoTitleSv || '') ||
+      formData.promptSeoDescriptionSv !== (settings.promptSeoDescriptionSv || '')
     );
   };
 
@@ -695,31 +715,73 @@ export default function InstallningarPage() {
                 </select>
               </div>
 
-              {/* Optimization Prompt */}
+              {/* Name Prompt */}
               <div>
                 <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', color: '#374151', marginBottom: '0.5rem' }}>
-                  Prompt – Optimering (SV)
+                  1. Namn, sv-SE
                 </label>
                 <textarea
-                  value={formData.promptOptimizeSv}
-                  onChange={(e) => setFormData(prev => ({ ...prev, promptOptimizeSv: e.target.value }))}
+                  value={formData.promptNameSv}
+                  onChange={(e) => setFormData(prev => ({ ...prev, promptNameSv: e.target.value }))}
                   rows={4}
                   style={{ width: '100%', padding: '0.75rem', border: '1px solid #d1d5db', borderRadius: '0.5rem', outline: 'none', fontSize: '0.875rem', resize: 'vertical', minHeight: '6rem' }}
-                  placeholder="Systemprompt för optimering..."
+                  placeholder="Systemprompt för namn-generering..."
                 />
               </div>
 
-              {/* Brands Optimization Prompt */}
+              {/* Short Description Prompt */}
               <div>
                 <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', color: '#374151', marginBottom: '0.5rem' }}>
-                  Systemprompt för varumärkesoptimering
+                  2. Kort beskrivning, sv-SE
                 </label>
                 <textarea
-                  value={formData.promptOptimizeBrandsSv}
-                  onChange={(e) => setFormData(prev => ({ ...prev, promptOptimizeBrandsSv: e.target.value }))}
+                  value={formData.promptShortDescriptionSv}
+                  onChange={(e) => setFormData(prev => ({ ...prev, promptShortDescriptionSv: e.target.value }))}
                   rows={4}
                   style={{ width: '100%', padding: '0.75rem', border: '1px solid #d1d5db', borderRadius: '0.5rem', outline: 'none', fontSize: '0.875rem', resize: 'vertical', minHeight: '6rem' }}
-                  placeholder="Systemprompt för varumärkesoptimering..."
+                  placeholder="Systemprompt för kort beskrivning..."
+                />
+              </div>
+
+              {/* Description HTML Prompt */}
+              <div>
+                <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', color: '#374151', marginBottom: '0.5rem' }}>
+                  3. Beskrivning (id: DescriptionHtml), sv-SE
+                </label>
+                <textarea
+                  value={formData.promptDescriptionHtmlSv}
+                  onChange={(e) => setFormData(prev => ({ ...prev, promptDescriptionHtmlSv: e.target.value }))}
+                  rows={4}
+                  style={{ width: '100%', padding: '0.75rem', border: '1px solid #d1d5db', borderRadius: '0.5rem', outline: 'none', fontSize: '0.875rem', resize: 'vertical', minHeight: '6rem' }}
+                  placeholder="Systemprompt för HTML-beskrivning..."
+                />
+              </div>
+
+              {/* SEO Title Prompt */}
+              <div>
+                <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', color: '#374151', marginBottom: '0.5rem' }}>
+                  4. Sökmotoranpassad titel, sv-SE
+                </label>
+                <textarea
+                  value={formData.promptSeoTitleSv}
+                  onChange={(e) => setFormData(prev => ({ ...prev, promptSeoTitleSv: e.target.value }))}
+                  rows={4}
+                  style={{ width: '100%', padding: '0.75rem', border: '1px solid #d1d5db', borderRadius: '0.5rem', outline: 'none', fontSize: '0.875rem', resize: 'vertical', minHeight: '6rem' }}
+                  placeholder="Systemprompt för SEO-titel..."
+                />
+              </div>
+
+              {/* SEO Description Prompt */}
+              <div>
+                <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', color: '#374151', marginBottom: '0.5rem' }}>
+                  5. Sökmotoranpassad beskrivning, sv-SE
+                </label>
+                <textarea
+                  value={formData.promptSeoDescriptionSv}
+                  onChange={(e) => setFormData(prev => ({ ...prev, promptSeoDescriptionSv: e.target.value }))}
+                  rows={4}
+                  style={{ width: '100%', padding: '0.75rem', border: '1px solid #d1d5db', borderRadius: '0.5rem', outline: 'none', fontSize: '0.875rem', resize: 'vertical', minHeight: '6rem' }}
+                  placeholder="Systemprompt för SEO-beskrivning..."
                 />
               </div>
 

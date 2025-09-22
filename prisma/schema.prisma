@@ -157,6 +157,11 @@ model OpenAISettings {
   promptOptimizeSv             String   // Swedish optimization prompt for products
   promptOptimizeBrandsSv       String?  // Swedish optimization prompt for brands
   promptTranslateDirect        String   // Direct translation prompt (deprecated)
+  promptNameSv                 String?  // Swedish prompt for name generation
+  promptShortDescriptionSv     String?  // Swedish prompt for short description generation
+  promptDescriptionHtmlSv      String?  // Swedish prompt for HTML description generation
+  promptSeoTitleSv             String?  // Swedish prompt for SEO title generation
+  promptSeoDescriptionSv       String?  // Swedish prompt for SEO description generation
   exampleProductImportTokens   String?  // JSON string containing extracted tokens from example file
   exampleBrandsImportTokens    String?  // JSON string containing extracted tokens from brands example file
   translationLanguages         String?  // JSON string containing array of ISO-639-1 language codes
