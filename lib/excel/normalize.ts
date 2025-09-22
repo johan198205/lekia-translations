@@ -33,6 +33,7 @@ export interface NormalizeResult {
     tokens?: ExtractedTokens;
     detectedLanguages?: string[];
     suggestedOriginalLanguage?: string;
+    headers?: string[]; // For brands: exact Excel headers in order
   };
 }
 
@@ -390,23 +391,21 @@ function parseUIStringRow(row: ExcelJS.Row, headers: { name: number; locales: st
 // TODO: Parsa attributes till strukturerat objekt
 
 async function normalizeBrands(worksheet: ExcelJS.Worksheet): Promise<NormalizeResult> {
-  const headers = getNormalizedHeaders(worksheet);
-  
-  validateRequiredColumns(headers, 'brands');
+  // Get exact headers in original order
+  const exactHeaders = getAllHeaders(worksheet);
   
   // Extract tokens from all column headers
-  const allHeaders = getAllHeaders(worksheet);
   let extractedTokens;
   try {
-    extractedTokens = extractTokens(allHeaders);
+    extractedTokens = extractTokens(exactHeaders);
   } catch (error) {
     console.warn('Failed to extract tokens:', error);
     extractedTokens = { tokens: [], systemTokens: [] };
   }
 
   // Detect language patterns in headers
-  const detectedLanguages = detectLanguagePatterns(allHeaders);
-  const suggestedOriginalLanguage = suggestOriginalLanguage(allHeaders, detectedLanguages);
+  const detectedLanguages = detectLanguagePatterns(exactHeaders);
+  const suggestedOriginalLanguage = suggestOriginalLanguage(exactHeaders, detectedLanguages);
   
   const brands: Brand[] = [];
   let skipped = 0;
@@ -419,7 +418,7 @@ async function normalizeBrands(worksheet: ExcelJS.Worksheet): Promise<NormalizeR
       return;
     }
     
-    const brand = parseBrandRow(row, headers);
+    const brand = parseBrandRowWithExactHeaders(row, exactHeaders);
     if (brand) {
       brands.push(brand);
     }
@@ -433,7 +432,64 @@ async function normalizeBrands(worksheet: ExcelJS.Worksheet): Promise<NormalizeR
       tokens: extractedTokens,
       detectedLanguages,
       suggestedOriginalLanguage,
+      headers: exactHeaders, // Store exact headers for UI
     },
+  };
+}
+
+function parseBrandRowWithExactHeaders(row: ExcelJS.Row, exactHeaders: string[]): Brand | null {
+  // Collect all raw data from the row using exact headers
+  const rawData: Record<string, any> = {};
+  let hasContent = false;
+  
+  exactHeaders.forEach((header, index) => {
+    const colNumber = index + 1; // Excel columns are 1-based
+    const cell = row.getCell(colNumber);
+    const cellValue = cell.value || '';
+    rawData[header] = cellValue;
+    
+    if (cellValue && String(cellValue).trim()) {
+      hasContent = true;
+    }
+  });
+  
+  if (!hasContent) {
+    return null; // Skip empty rows
+  }
+  
+  // Try to find name and description from any available columns
+  let name_sv = '';
+  let description_sv = '';
+  
+  // Look for common name/description patterns in headers
+  for (const [header, value] of Object.entries(rawData)) {
+    const lowerHeader = header.toLowerCase();
+    const stringValue = String(value).trim();
+    
+    if (stringValue && (lowerHeader.includes('name') || lowerHeader.includes('namn') || lowerHeader.includes('titel'))) {
+      name_sv = stringValue;
+    }
+    if (stringValue && (lowerHeader.includes('description') || lowerHeader.includes('beskrivning') || lowerHeader.includes('text'))) {
+      description_sv = stringValue;
+    }
+  }
+  
+  // If we can't find name/description, use the first two non-empty cells
+  if (!name_sv || !description_sv) {
+    const cellValues = Object.values(rawData)
+      .map(v => String(v).trim())
+      .filter(v => v);
+    
+    name_sv = name_sv || cellValues[0] || 'Unnamed Brand';
+    description_sv = description_sv || cellValues[1] || cellValues[0] || '';
+  }
+  
+  return {
+    name_sv: name_sv.trim(),
+    description_sv: truncateDescription(description_sv.trim()),
+    attributes: undefined, // Not used for brands
+    tone_hint: undefined, // Not used for brands
+    raw_data: rawData, // Contains all original Excel data with exact headers
   };
 }
 

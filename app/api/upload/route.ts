@@ -21,7 +21,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (!['product_texts', 'ui_strings', 'brands'].includes(jobType)) {
+    if (!['product_texts', 'ui_strings'].includes(jobType)) {
       return NextResponse.json(
         { error: 'Invalid job type' },
         { status: 400 }
@@ -56,9 +56,9 @@ export async function POST(request: NextRequest) {
     const buffer = Buffer.from(await file.arrayBuffer());
 
     // Normalize Excel data
-    const result = await normalize(buffer, jobType as 'product_texts' | 'ui_strings' | 'brands');
+    const result = await normalize(buffer, jobType as 'product_texts' | 'ui_strings');
 
-    // Prepare meta data with tokens, locales, and detected languages
+    // Prepare meta data with tokens, locales, detected languages, and headers
     let metaData = null;
     if (result.meta) {
       try {
@@ -71,6 +71,9 @@ export async function POST(request: NextRequest) {
         }
         if (result.meta.detectedLanguages) {
           metaObject.detectedLanguages = result.meta.detectedLanguages;
+        }
+        if (result.meta.headers) {
+          metaObject.headers = result.meta.headers;
         }
         if (Object.keys(metaObject).length > 0) {
           metaData = JSON.stringify(metaObject);
@@ -86,7 +89,9 @@ export async function POST(request: NextRequest) {
       data: {
         filename: file.name,
         upload_date: new Date(),
-        total_products: jobType === 'product_texts' ? (result.products?.length || 0) : (result.uiStrings?.length || 0),
+        total_products: jobType === 'product_texts'
+          ? (result.products?.length || 0)
+          : (result.uiStrings?.length || 0),
         job_type: jobType as 'product_texts' | 'ui_strings',
         meta: metaData
       }
@@ -167,50 +172,6 @@ export async function POST(request: NextRequest) {
           name: item.name,
           values: item.values ? JSON.parse(item.values) : {},
           status: item.status
-        })),
-        meta: result.meta
-      });
-    } else if (jobType === 'brands' && result.brands) {
-      // Create brands with upload_id (no batch_id initially) - sequentially to preserve order
-      const brands = [];
-      for (const brand of result.brands) {
-        const createdBrand = await prisma.brand.create({
-          data: {
-            name_sv: brand.name_sv,
-            description_sv: brand.description_sv,
-            attributes: brand.attributes,
-            tone_hint: brand.tone_hint,
-            raw_data: brand.raw_data ? JSON.stringify(brand.raw_data) : null,
-            status: 'pending',
-            upload_id: upload.id
-          }
-        });
-        brands.push(createdBrand);
-      }
-
-      console.log(`[UPLOAD] Created ${brands.length} brands for upload ${upload.id}`);
-      console.log(`[UPLOAD] Brand IDs:`, brands.map(b => b.id));
-
-      // Verify brands were created by fetching them back
-      const verifyBrands = await prisma.brand.findMany({
-        where: { upload_id: upload.id }
-      });
-      console.log(`[UPLOAD] Verified ${verifyBrands.length} brands in database for upload ${upload.id}`);
-
-      return NextResponse.json({
-        uploadId: upload.id,
-        brands: brands.map(brand => ({
-          id: brand.id,
-          name_sv: brand.name_sv,
-          description_sv: brand.description_sv,
-          attributes: brand.attributes,
-          tone_hint: brand.tone_hint,
-          status: brand.status,
-          batch_id: brand.batch_id,
-          short_sv: brand.short_sv,
-          long_html_sv: brand.long_html_sv,
-          translations: brand.translations,
-          error_message: brand.error_message
         })),
         meta: result.meta
       });

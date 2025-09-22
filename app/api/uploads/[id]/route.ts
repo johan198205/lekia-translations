@@ -31,6 +31,11 @@ export async function DELETE(
       where: { upload_id: uploadId }
     })
 
+    // Then delete all brands
+    await prisma.brand.deleteMany({
+      where: { upload_id: uploadId }
+    })
+
     // Then delete all batches
     await prisma.productBatch.deleteMany({
       where: { upload_id: uploadId }

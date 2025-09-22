@@ -119,12 +119,13 @@ type SourceType = 'existing' | 'new' | null
 function BatchOversattningContent() {
   const searchParams = useSearchParams()
   const [file, setFile] = useState<File | null>(null)
-  const [jobType, setJobType] = useState<'product_texts' | 'ui_strings' | 'brands'>('product_texts')
+  const [jobType, setJobType] = useState<'product_texts' | 'ui_strings'>('product_texts')
   const [sourceType, setSourceType] = useState<SourceType>(null)
   const [productsCount, setProductsCount] = useState<number>(0)
   const [parsedProducts, setParsedProducts] = useState<Product[]>([])
   const [parsedUIStrings, setParsedUIStrings] = useState<UIString[]>([])
   const [parsedBrands, setParsedBrands] = useState<Brand[]>([])
+  const [brandsHeaders, setBrandsHeaders] = useState<string[]>([])
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
   const [batchId, setBatchId] = useState<string>('')
   const [visibleRows, setVisibleRows] = useState<number>(200)
@@ -136,6 +137,21 @@ function BatchOversattningContent() {
   const [availableBatches, setAvailableBatches] = useState<Batch[]>([])
   const [isRegenerating, setIsRegenerating] = useState(false)
   const [isUploading, setIsUploading] = useState(false)
+
+  // Ensure headers are available for brands even if API didn't include them
+  useEffect(() => {
+    if (jobType === 'brands' && brandsHeaders.length === 0 && parsedBrands.length > 0) {
+      try {
+        const first = parsedBrands[0] as any
+        const rd = first?.raw_data
+        const obj = typeof rd === 'string' ? JSON.parse(rd) : rd
+        const inferred = obj && typeof obj === 'object' ? Object.keys(obj) : []
+        if (inferred.length > 0) setBrandsHeaders(inferred)
+      } catch {
+        // ignore
+      }
+    }
+  }, [jobType, parsedBrands, brandsHeaders.length])
 
   // Filter uploads based on selected jobType
   const filteredUploads = uploads.filter(upload => upload.job_type === jobType)
@@ -194,7 +210,7 @@ function BatchOversattningContent() {
 
   // Load jobType from URL params and prompt settings from localStorage on mount
   useEffect(() => {
-    const urlJobType = searchParams.get('jobType') as 'product_texts' | 'ui_strings' | 'brands'
+    const urlJobType = searchParams.get('jobType') as 'product_texts' | 'ui_strings'
     if (urlJobType && (urlJobType === 'product_texts' || urlJobType === 'ui_strings' || urlJobType === 'brands')) {
       setJobType(urlJobType)
     }
@@ -666,10 +682,16 @@ function BatchOversattningContent() {
           setSelectedIds(new Set(data.uiItems.map((_: any, index: number) => index)))
           setUploadAlert(`✅ ${data.uiItems.length} återstående UI-element laddade. Välj UI-element nedan och klicka "Skapa batch".`)
         } else if (selectedUpload.job_type === 'brands') {
-          setParsedBrands(data.brands)
-          setProductsCount(data.brands.length)
-          setSelectedIds(new Set(data.brands.map((_: any, index: number) => index)))
-          setUploadAlert(`✅ ${data.brands.length} återstående varumärken laddade. Välj varumärken nedan och klicka "Skapa batch".`)
+          // Disable brands in this flow – direct the user to settings
+          setParsedProducts([])
+          setParsedUIStrings([])
+          setParsedBrands([])
+          setBrandsHeaders([])
+          setProductsCount(0)
+          setSelectedIds(new Set())
+          setUploadAlert('ℹ️ Varumärken hanteras inte här längre. Gå till Inställningar → Varumärken.')
+          setPhase('idle')
+          return
         }
         setPhase('uploaded')
       } else {
@@ -1521,13 +1543,12 @@ function BatchOversattningContent() {
                 id="jobTypeSelect"
                 name="jobType"
                 value={jobType}
-                onChange={(e) => handleJobTypeChange(e.target.value as 'product_texts' | 'ui_strings' | 'brands')}
+                onChange={(e) => handleJobTypeChange(e.target.value as 'product_texts' | 'ui_strings')}
                 className="mt-1 block w-full pl-3 pr-10 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md"
                 style={{ padding: '10px' }}
               >
                 <option value="product_texts">Produkttexter (befintligt)</option>
                 <option value="ui_strings">UI-element / Webbplatstexter (NY)</option>
-                <option value="brands">Varumärken (NY)</option>
               </select>
             </div>
 
@@ -1806,7 +1827,7 @@ function BatchOversattningContent() {
                 <table className="w-full">
                   <thead className="bg-gray-50 sticky top-0">
                     <tr>
-                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">
                         <input
                           type="checkbox"
                           checked={selectedIds.size === getCurrentItems().length && getCurrentItems().length > 0}
@@ -1814,49 +1835,76 @@ function BatchOversattningContent() {
                           className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                         />
                       </th>
-                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        {jobType === 'product_texts' ? 'Produktnamn' : jobType === 'ui_strings' ? 'Namn' : 'Varumärkesnamn'}
-                      </th>
-                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        {jobType === 'product_texts' ? 'Beskrivning' : jobType === 'ui_strings' ? 'Värden' : 'Beskrivning'}
-                      </th>
+                      {jobType === 'brands' ? (
+                        brandsHeaders.map((header, index) => (
+                          <th key={index} className="px-3 py-2 text-left text-xs font-medium text-gray-700">
+                            {header}
+                          </th>
+                        ))
+                      ) : (
+                        <>
+                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            {jobType === 'product_texts' ? 'Produktnamn' : 'Namn'}
+                          </th>
+                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            {jobType === 'product_texts' ? 'Beskrivning' : 'Värden'}
+                          </th>
+                        </>
+                      )}
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
-                    {getCurrentItems().slice(0, visibleRows).map((item, index) => (
-                      <tr key={index} className="hover:bg-gray-50">
-                        <td className="px-3 py-2">
-                          <input
-                            type="checkbox"
-                            checked={selectedIds.has(index)}
-                            onChange={() => handleProductToggle(index)}
-                            className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                          />
-                        </td>
-                        <td className="px-3 py-2 text-sm font-medium text-gray-900">
-                          {jobType === 'product_texts' ? (item as Product).name_sv : jobType === 'ui_strings' ? (item as UIString).name : (item as Brand).name_sv}
-                        </td>
-                        <td className="px-3 py-2 text-sm text-gray-500">
-                          {jobType === 'product_texts' ? (
-                            (item as Product).description_sv.length > 120 
-                              ? `${(item as Product).description_sv.substring(0, 120)}...` 
-                              : (item as Product).description_sv
-                          ) : jobType === 'ui_strings' ? (
-                            <div className="space-y-1">
-                              {Object.entries((item as UIString).values).map(([locale, value]) => (
-                                <div key={locale} className="text-xs">
-                                  <span className="font-medium">{locale}:</span> {value || '(tom)'}
-                                </div>
-                              ))}
-                            </div>
+                    {getCurrentItems().slice(0, visibleRows).map((item, index) => {
+                      return (
+                        <tr key={index} className="hover:bg-gray-50">
+                          <td className="px-3 py-2">
+                            <input
+                              type="checkbox"
+                              checked={selectedIds.has(index)}
+                              onChange={() => handleProductToggle(index)}
+                              className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                            />
+                          </td>
+                          {jobType === 'brands' ? (
+                            (() => {
+                              let rawData: Record<string, any> = {};
+                              try {
+                                const rd: any = (item as any).raw_data;
+                                rawData = typeof rd === 'string' ? JSON.parse(rd) : (rd || {});
+                              } catch {}
+                              return brandsHeaders.map((header, hIdx) => {
+                                const value = rawData[header] ?? '';
+                                const display = String(value);
+                                return (
+                                  <td key={hIdx} className="px-3 py-2 text-sm text-gray-600">
+                                    <div className="truncate" title={display}>{display}</div>
+                                  </td>
+                                )
+                              })
+                            })()
                           ) : (
-                            (item as Brand).description_sv.length > 120 
-                              ? `${(item as Brand).description_sv.substring(0, 120)}...` 
-                              : (item as Brand).description_sv
+                            <>
+                              <td className="px-3 py-2 text-sm font-medium text-gray-900">
+                                {jobType === 'product_texts' ? (item as Product).name_sv : (item as UIString).name}
+                              </td>
+                              <td className="px-3 py-2 text-sm text-gray-500">
+                                {jobType === 'product_texts' ? (
+                                  (item as Product).description_sv.length > 120 ? `${(item as Product).description_sv.substring(0, 120)}...` : (item as Product).description_sv
+                                ) : (
+                                  <div className="space-y-1">
+                                    {Object.entries((item as UIString).values).map(([locale, value]) => (
+                                      <div key={locale} className="text-xs">
+                                        <span className="font-medium">{locale}:</span> {value || '(tom)'}
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                              </td>
+                            </>
                           )}
-                        </td>
-                      </tr>
-                    ))}
+                        </tr>
+                      )
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -1996,6 +2044,51 @@ function BatchOversattningContent() {
                 </div>
               )}
 
+              {jobType === 'brands' && (
+                <div className="space-y-4">
+                  {/* Available columns from Excel */}
+                  <div className="space-y-4">
+                    <label className="text-lg font-medium text-gray-700">
+                      Tillgängliga kolumner från Excel-fil:
+                    </label>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
+                      {brandsHeaders.map((header, index) => (
+                        <div key={index} className="flex items-center space-x-2 p-3 bg-gray-50 rounded-lg border">
+                          <span className="text-sm font-mono text-gray-600">{header}</span>
+                        </div>
+                      ))}
+                    </div>
+                    {brandsHeaders.length === 0 && (
+                      <p className="text-sm text-amber-600">⚠️ Inga kolumner hittades i Excel-filen</p>
+                    )}
+                  </div>
+
+                  {/* Selected languages display */}
+                  <div className="space-y-4">
+                    <label className="text-lg font-medium text-gray-700">
+                      Valda språk för översättning:
+                    </label>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {selectedTargetLangs.map((langCode) => (
+                        <div key={langCode} className="flex items-center space-x-4 p-4 bg-blue-50 rounded-lg border border-blue-200">
+                          <div className="flex items-center space-x-3">
+                            <span className="text-3xl">{codeToCountry(langCode).emoji}</span>
+                            <div className="flex flex-col">
+                              <span className="font-semibold text-lg text-blue-800">{codeToCountry(langCode).display}</span>
+                              <span className="text-sm text-blue-600">({langCode.toUpperCase()})</span>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    {selectedTargetLangs.length === 0 && (
+                      <p className="text-sm text-amber-600">⚠️ Inga språk valda för översättning</p>
+                    )}
+                  </div>
+
+                </div>
+              )}
+
               {/* Progress bars */}
               {phase === 'optimizing' && progress && (
                 <ProgressBar
@@ -2111,13 +2204,9 @@ function BatchOversattningContent() {
                             </>
                           ) : jobType === 'brands' ? (
                             <>
-                              <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">VARUMÄRKESNAMN</th>
-                              <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">BESKRIVNING (SV)</th>
-                              <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">KORT BESKRIVNING (SV)</th>
-                              <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">LÅNG BESKRIVNING HTML (SV)</th>
-                              {selectedTargetLangs.map((langCode) => (
-                                <th key={langCode} className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                  KORT BESKRIVNING ({langCode.toUpperCase()})
+                              {brandsHeaders.map((header, index) => (
+                                <th key={index} className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                  {header}
                                 </th>
                               ))}
                               <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-20">STATUS</th>
@@ -2280,97 +2369,49 @@ function BatchOversattningContent() {
                             </tr>
                           ))
                         ) : (
-                          parsedBrands.slice(0, visibleRows).map((brand, index) => (
-                            <tr key={index} className="hover:bg-gray-50">
-                              <td className="px-2 py-1">
-                                <input
-                                  type="checkbox"
-                                  checked={selectedIds.has(index)}
-                                  onChange={() => handleProductToggle(index)}
-                                  className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                                />
-                              </td>
-                              <td className="px-2 py-1 text-xs font-bold text-gray-900">
-                                <div className="truncate" title={brand.name_sv}>
-                                  {brand.name_sv}
-                                </div>
-                              </td>
-                              <td className="px-2 py-1 text-xs text-gray-500">
-                                <div 
-                                  className="cursor-pointer hover:bg-gray-100 truncate"
-                                  onClick={() => handleCellClick(brand, 'description_sv')}
-                                  title="Klicka för att redigera"
-                                >
-                                  {brand.description_sv.length > 40 
-                                    ? `${brand.description_sv.substring(0, 40)}...` 
-                                    : brand.description_sv}
-                                </div>
-                              </td>
-                              <td className="px-2 py-1 text-xs text-gray-500">
-                                {brand.short_sv ? (
-                                  <div 
-                                    className="cursor-pointer hover:bg-gray-100 truncate"
-                                    onClick={() => handleCellClick(brand, 'short_sv')}
-                                    title="Klicka för att redigera"
-                                  >
-                                    <div className="truncate font-mono text-xs">
-                                      {brand.short_sv.substring(0, 40) + (brand.short_sv.length > 40 ? '...' : '')}
-                                    </div>
-                                  </div>
-                                ) : (
-                                  <span className="text-gray-400">-</span>
-                                )}
-                              </td>
-                              <td className="px-2 py-1 text-xs text-gray-500">
-                                {brand.long_html_sv ? (
-                                  <div 
-                                    className="cursor-pointer hover:bg-gray-100 truncate"
-                                    onClick={() => handleCellClick(brand, 'long_html_sv')}
-                                    title="Klicka för att redigera"
-                                  >
-                                    <div className="truncate font-mono text-xs">
-                                      {brand.long_html_sv.substring(0, 40) + (brand.long_html_sv.length > 40 ? '...' : '')}
-                                    </div>
-                                  </div>
-                                ) : (
-                                  <span className="text-gray-400">-</span>
-                                )}
-                              </td>
-                              {translationLanguages.map((langCode) => {
-                                let translatedText = '';
-                                if (brand.translations) {
-                                  try {
-                                    const translations = JSON.parse(brand.translations);
-                                    if (translations[langCode]) {
-                                      translatedText = translations[langCode].short || '';
-                                    }
-                                  } catch (error) {
-                                    console.warn('Failed to parse brand translations:', error);
-                                  }
-                                }
-                                return (
-                                  <td key={langCode} className="px-2 py-1 text-xs text-gray-500">
-                                    {translatedText ? (
-                                      <div 
-                                        className="cursor-pointer hover:bg-gray-100 truncate"
-                                        onClick={() => handleCellClick(brand, `translations.${langCode}.short` as any)}
-                                        title="Klicka för att redigera"
-                                      >
-                                        {translatedText.length > 40 
-                                          ? `${translatedText.substring(0, 40)}...` 
-                                          : translatedText}
-                                      </div>
-                                    ) : (
-                                      <span className="text-gray-400">-</span>
-                                    )}
-                                  </td>
-                                );
-                              })}
-                              <td className="px-2 py-1 text-xs text-gray-700">
-                                {brand.status || 'pending'}
-                              </td>
-                            </tr>
-                          ))
+                          parsedBrands.slice(0, visibleRows).map((brand, index) => {
+                            // Parse raw_data to get cell values
+                            let rawData: Record<string, any> = {};
+                            try {
+                              rawData = brand.raw_data ? JSON.parse(brand.raw_data) : {};
+                            } catch (error) {
+                              console.warn('Failed to parse brand raw_data:', error);
+                            }
+
+                            return (
+                              <tr key={index} className="hover:bg-gray-50">
+                                <td className="px-2 py-1">
+                                  <input
+                                    type="checkbox"
+                                    checked={selectedIds.has(index)}
+                                    onChange={() => handleProductToggle(index)}
+                                    className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                  />
+                                </td>
+                                {brandsHeaders.map((header, headerIndex) => {
+                                  const cellValue = rawData[header] || '';
+                                  const displayValue = String(cellValue).trim();
+                                  
+                                  return (
+                                    <td key={headerIndex} className="px-2 py-1 text-xs text-gray-500">
+                                      {displayValue ? (
+                                        <div className="truncate" title={displayValue}>
+                                          {displayValue.length > 40 
+                                            ? `${displayValue.substring(0, 40)}...` 
+                                            : displayValue}
+                                        </div>
+                                      ) : (
+                                        <span className="text-gray-400">-</span>
+                                      )}
+                                    </td>
+                                  );
+                                })}
+                                <td className="px-2 py-1 text-xs text-gray-700">
+                                  {brand.status || 'pending'}
+                                </td>
+                              </tr>
+                            );
+                          })
                         )}
                       </tbody>
                     </table>
