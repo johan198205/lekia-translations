@@ -18,6 +18,8 @@ export async function POST(
     const { 
       indices = [], 
       optimizeSv: shouldOptimize = false, 
+      optimizeFields = [],
+      targetLangs: targetLangsFromBody = [],
       clientPromptSettings = {}
     } = body
 
@@ -65,7 +67,9 @@ export async function POST(
 
     // Get target languages from batch
     let targetLangs: string[] = []
-    if (batch.targetLanguages) {
+    if (Array.isArray(targetLangsFromBody) && targetLangsFromBody.length > 0) {
+      targetLangs = targetLangsFromBody
+    } else if (batch.targetLanguages) {
       try {
         targetLangs = JSON.parse(batch.targetLanguages)
       } catch (error) {
@@ -104,8 +108,17 @@ export async function POST(
         )
       }
 
+      // Guard: no actions selected
+      if (!shouldOptimize && (!targetLangs || targetLangs.length === 0)) {
+        return NextResponse.json(
+          { error: 'No actions selected (optimize/translate)' },
+          { status: 400 }
+        )
+      }
+
       console.log(`[PROCESS] Processing ${itemsToProcess.length} products`);
       console.log(`[PROCESS] Optimize SV: ${shouldOptimize}`);
+      console.log(`[PROCESS] Optimize fields: ${optimizeFields.join(', ')}`);
       console.log(`[PROCESS] Target languages: ${targetLangs.length > 0 ? targetLangs.join(', ') : 'none (optimization only)'}`);
 
       // Calculate total jobs for progress tracking
@@ -123,7 +136,7 @@ export async function POST(
           console.log(`[PROCESS] Processing product: ${product.name_sv}`);
 
           // Step 1: Optimize Swedish if requested
-          if (shouldOptimize) {
+          if (shouldOptimize && optimizeFields.length > 0) {
             console.log(`[PROCESS] Optimizing Swedish for product: ${product.name_sv}`);
             
             // Set status to optimizing
@@ -132,31 +145,79 @@ export async function POST(
               data: { status: 'optimizing' }
             });
 
-            // Use LLM adapter for optimization
-            const optimizedText = await optimizeSv({
-              nameSv: product.name_sv,
-              descriptionSv: product.description_sv,
-              attributes: product.attributes,
-              toneHint: product.tone_hint || undefined,
-              rawData: product.raw_data || undefined
-            }, {
-              ...clientPromptSettings.optimize,
-              model: jobConfig.model,
-              system: jobConfig.promptOptimizeSv,
-              uploadMeta: batch.upload?.meta || undefined,
-              settingsTokens: openaiConfig.exampleProductImportTokens || undefined
-            });
+            // Process each selected field for optimization
+            const updateData: any = { status: 'optimized' };
+            
+            for (const field of optimizeFields) {
+              let sourceText = '';
+              let promptKey = '';
+              
+              // Map field to source text and appropriate prompt
+              switch (field) {
+                case 'name_sv':
+                  sourceText = product.name_sv;
+                  promptKey = 'promptNameSv';
+                  break;
+                case 'short_sv':
+                  sourceText = product.description_sv; // Use description as source for short
+                  promptKey = 'promptShortDescriptionSv';
+                  break;
+                case 'description_html_sv':
+                  sourceText = product.description_sv;
+                  promptKey = 'promptDescriptionHtmlSv';
+                  break;
+                case 'seo_title_sv':
+                  sourceText = product.name_sv; // Use name as source for SEO title
+                  promptKey = 'promptSeoTitleSv';
+                  break;
+                case 'seo_description_sv':
+                  sourceText = product.description_sv;
+                  promptKey = 'promptSeoDescriptionSv';
+                  break;
+                default:
+                  console.warn(`Unknown field for optimization: ${field}`);
+                  continue;
+              }
+
+              if (sourceText && sourceText.trim()) {
+                // Get field-specific prompt or fallback to general optimize prompt
+                const fieldPrompt = openaiConfig[promptKey as keyof typeof openaiConfig] || jobConfig.promptOptimizeSv;
+                
+                // Use LLM adapter for optimization
+                const optimizedText = await optimizeSv({
+                  nameSv: product.name_sv,
+                  descriptionSv: sourceText,
+                  attributes: product.attributes,
+                  toneHint: product.tone_hint || undefined,
+                  rawData: product.raw_data || undefined
+                }, {
+                  ...clientPromptSettings.optimize,
+                  model: jobConfig.model,
+                  system: fieldPrompt,
+                  uploadMeta: batch.upload?.meta || undefined,
+                  settingsTokens: openaiConfig.exampleProductImportTokens || undefined
+                });
+
+                // Store optimized text in appropriate field
+                if (field === 'short_sv') {
+                  updateData.optimized_sv = optimizedText;
+                } else {
+                  // For other fields, we'll store in raw_data or create new fields as needed
+                  // For now, store in optimized_sv as the main optimized field
+                  updateData.optimized_sv = optimizedText;
+                }
+                
+                console.log(`[PROCESS] Field ${field} optimized for ${product.name_sv}`);
+              }
+            }
 
             // Update product with optimized text
             await prisma.product.update({
               where: { id: product.id },
-              data: {
-                optimized_sv: optimizedText,
-                status: 'optimized'
-              }
+              data: updateData
             });
 
-            sourceText = optimizedText;
+            sourceText = updateData.optimized_sv || product.description_sv;
             completedJobs++;
             console.log(`[PROCESS] Optimization completed for ${product.name_sv}`);
           }

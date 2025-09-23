@@ -175,13 +175,13 @@ function BatchOversattningContent() {
     }
   }, [jobType, parsedBrands, brandsHeaders.length])
 
-  // Auto-select all products when parsedProducts changes
+  // Auto-select all products only when parsedProducts changes (not when user clears selection)
   useEffect(() => {
     console.log('[DEBUG] parsedProducts changed:', parsedProducts.length)
     if (parsedProducts.length > 0 && selectedProductIds.size === 0) {
       setSelectedProductIds(new Set(parsedProducts.map((product: Product) => product.id)))
     }
-  }, [parsedProducts, selectedProductIds.size])
+  }, [parsedProducts])
 
   
   // Filter uploads based on selected jobType
@@ -1030,6 +1030,24 @@ function BatchOversattningContent() {
   const handleCombinedProcess = async () => {
     if (!batchId || selectedProductIds.size === 0) return
 
+    // Check if any actions are selected
+    if (!actionOptimize && !actionTranslate) {
+      setTranslateAlert('❌ Välj minst en åtgärd (Berika/optimera eller Översätta)')
+      return
+    }
+
+    // Check if optimize is selected but no fields are chosen
+    if (actionOptimize && optimizeFields.size === 0) {
+      setTranslateAlert('❌ Välj minst en kolumn att optimera')
+      return
+    }
+
+    // Check if translate is selected but no languages are chosen
+    if (actionTranslate && selectedTargetLangs.length === 0) {
+      setTranslateAlert('❌ Välj minst ett språk för översättning')
+      return
+    }
+
     try {
       // Show progress UI immediately
       setPhase('translating')
@@ -1041,7 +1059,17 @@ function BatchOversattningContent() {
         eventSourceRef.current.close()
       }
       
-      const eventSource = new EventSource(`/api/batches/${batchId}/events?selectedIndices=${Array.from(selectedProductIds).join(',')}`)
+      // Map selected product IDs -> indices (server expects indices)
+      const idToIndex = new Map<string, number>(
+        parsedProducts.map((p, idx) => [p.id, idx])
+      )
+      const indicesFromIds = Array.from(selectedProductIds)
+        .map(id => idToIndex.get(id))
+        .filter((v): v is number => typeof v === 'number')
+      // Prefer explicit row selection (selectedIds = indices from table). Fallback to product IDs.
+      const selectedIndices = selectedIds.size > 0 ? Array.from(selectedIds) : indicesFromIds
+
+      const eventSource = new EventSource(`/api/batches/${batchId}/events?selectedIndices=${selectedIndices.join(',')}`)
       eventSourceRef.current = eventSource
       
       eventSource.onmessage = (event) => {
@@ -1076,8 +1104,9 @@ function BatchOversattningContent() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          indices: Array.from(selectedProductIds),
-          optimizeSv: optimizeSv,
+          indices: selectedIndices,
+          optimizeSv: actionOptimize,
+          optimizeFields: Array.from(optimizeFields),
           targetLangs: selectedTargetLangs,
           clientPromptSettings: {
             optimize: {

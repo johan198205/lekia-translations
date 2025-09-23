@@ -146,22 +146,29 @@ export async function GET(
       // Build headers based on original structure
       let headers: any[] = []
       if (hasRawData && originalHeaders.length > 0) {
-        // Use original column structure
+        // Detect the short description header to place a new column next to it
+        const shortDescHeader = originalHeaders.find(h => {
+          const lower = h.toLowerCase()
+          return lower.includes('kort') && lower.includes('beskriv')
+        })
+        
+        // Use original column structure and insert a new column immediately after the detected short description
         originalHeaders.forEach(header => {
           headers.push({
             header: header,
             key: header,
             width: 40
           })
+          if (shortDescHeader && header === shortDescHeader) {
+            headers.push({
+              header: `NY-${shortDescHeader}`,
+              key: `NY-${shortDescHeader}`,
+              width: 50
+            })
+          }
         })
         
-        // Add optimized and translation columns after original columns
-        headers.push({
-          header: 'Optimerad text (SV)',
-          key: 'optimized_sv',
-          width: 50
-        })
-        
+        // Note: We no longer add a trailing "Optimerad text (SV)" column when original headers are present.
         // Add dynamic translation columns with proper locale mapping
         translationLanguages.forEach(langCode => {
           // Map internal language codes to proper locale format
@@ -236,8 +243,15 @@ export async function GET(
             // Remove internal fields that shouldn't be exported
             delete rowData['__original_row_number__']
             
-            // Add optimized text
-            rowData['optimized_sv'] = product.optimized_sv || ''
+            // Add optimized text next to the detected short description header
+            const rowHeaders = Object.keys(rowData)
+            const shortDescHeader = rowHeaders.find(h => {
+              const lower = h.toLowerCase()
+              return lower.includes('kort') && lower.includes('beskriv')
+            })
+            if (shortDescHeader) {
+              rowData[`NY-${shortDescHeader}`] = product.optimized_sv || ''
+            }
             
             // Override with translations where available
             if (product.translations) {
