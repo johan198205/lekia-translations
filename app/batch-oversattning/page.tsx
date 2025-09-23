@@ -127,6 +127,7 @@ function BatchOversattningContent() {
   const [parsedBrands, setParsedBrands] = useState<Brand[]>([])
   const [brandsHeaders, setBrandsHeaders] = useState<string[]>([])
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
+  const [selectedProductIds, setSelectedProductIds] = useState<Set<string>>(new Set())
   const [batchId, setBatchId] = useState<string>('')
   const [visibleRows, setVisibleRows] = useState<number>(200)
   const [uploads, setUploads] = useState<Upload[]>([])
@@ -174,6 +175,15 @@ function BatchOversattningContent() {
     }
   }, [jobType, parsedBrands, brandsHeaders.length])
 
+  // Auto-select all products when parsedProducts changes
+  useEffect(() => {
+    console.log('[DEBUG] parsedProducts changed:', parsedProducts.length)
+    if (parsedProducts.length > 0 && selectedProductIds.size === 0) {
+      setSelectedProductIds(new Set(parsedProducts.map((product: Product) => product.id)))
+    }
+  }, [parsedProducts, selectedProductIds.size])
+
+  
   // Filter uploads based on selected jobType
   const filteredUploads = uploads.filter(upload => upload.job_type === jobType)
   const [regenerateScope, setRegenerateScope] = useState<'all' | 'selected'>('all')
@@ -246,6 +256,27 @@ function BatchOversattningContent() {
 
   const eventSourceRef = useRef<EventSource | null>(null)
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+
+  // Load batch data when entering step 3
+  useEffect(() => {
+    console.log('[DEBUG] currentStep changed to:', currentStep, 'batchId:', batchId, 'selectedBatch:', !!selectedBatch)
+    if (currentStep === 3 && batchId && !selectedBatch && jobType === 'product_texts') {
+      console.log('[DEBUG] Loading batch data for step 3, batchId:', batchId)
+      const existingBatch = availableBatches.find(b => b.id === batchId)
+      if (existingBatch) {
+        handleBatchSelect(existingBatch)
+      } else {
+        fetch(`/api/batches/${batchId}`)
+          .then(response => response.json())
+          .then(data => {
+            console.log('[DEBUG] Loaded batch data for step 3:', data)
+            setParsedProducts(data.products || [])
+            setSelectedProductIds(new Set(data.products?.map((p: Product) => p.id) || []))
+          })
+          .catch(error => console.error('[DEBUG] Failed to load batch data:', error))
+      }
+    }
+  }, [currentStep, batchId, selectedBatch, jobType, availableBatches])
 
   // Load jobType from URL params and prompt settings from localStorage on mount
   useEffect(() => {
@@ -415,6 +446,7 @@ function BatchOversattningContent() {
             setParsedProducts(data.products)
             setProductsCount(data.products.length)
             setSelectedIds(new Set(data.products.map((_: any, index: number) => index)))
+            setSelectedProductIds(new Set(data.products.map((product: Product) => product.id)))
             setUploadAlert(`✅ Upload vald: ${upload.filename} (${data.products.length} produkter)`)
           } else {
             setParsedUIStrings(data.uiItems)
@@ -451,6 +483,7 @@ function BatchOversattningContent() {
           setParsedProducts(data.products)
           setProductsCount(data.products.length)
           setSelectedIds(new Set(data.products.map((_: any, index: number) => index)))
+          setSelectedProductIds(new Set(data.products.map((product: Product) => product.id)))
           setUploadAlert(`✅ Batch vald: ${batch.filename} (${data.products.length} produkter)`)
         } else {
           // Handle UI items
@@ -565,6 +598,7 @@ function BatchOversattningContent() {
           setProductsCount(data.products.length)
           setParsedProducts(data.products)
           setSelectedIds(new Set(data.products.map((_: any, index: number) => index)))
+          setSelectedProductIds(new Set(data.products.map((product: Product) => product.id)))
           setUploadId(data.uploadId)
           setPhase('uploaded')
           setCurrentStep(2)
@@ -668,9 +702,11 @@ function BatchOversattningContent() {
           if (batchResponse.ok) {
             const batchData = await batchResponse.json()
             if (jobType === 'product_texts' && batchData.products) {
+              console.log('[DEBUG] Setting parsedProducts from batch data:', batchData.products.length)
+              console.log('[DEBUG] Batch data products:', batchData.products)
               setParsedProducts(batchData.products)
-              // Set selectedIds to include all products in the batch
-              setSelectedIds(new Set(batchData.products.map((_: any, index: number) => index)))
+              // Set selectedProductIds to include all products in the batch
+              setSelectedProductIds(new Set(batchData.products.map((product: Product) => product.id)))
             } else if (jobType === 'ui_strings' && batchData.ui_items) {
               const uiItems = batchData.ui_items.map((item: any) => ({
                 id: item.id,
@@ -724,6 +760,7 @@ function BatchOversattningContent() {
           setParsedProducts(data.products)
           setProductsCount(data.products.length)
           setSelectedIds(new Set(data.products.map((_: any, index: number) => index)))
+          setSelectedProductIds(new Set(data.products.map((product: Product) => product.id)))
           setUploadAlert(`✅ ${data.products.length} återstående produkter laddade. Välj produkter nedan och klicka "Skapa batch".`)
         } else if (selectedUpload.job_type === 'ui_strings') {
           setParsedUIStrings(data.uiItems)
@@ -991,7 +1028,7 @@ function BatchOversattningContent() {
   }
 
   const handleCombinedProcess = async () => {
-    if (!batchId || selectedIds.size === 0) return
+    if (!batchId || selectedProductIds.size === 0) return
 
     try {
       // Show progress UI immediately
@@ -1004,7 +1041,7 @@ function BatchOversattningContent() {
         eventSourceRef.current.close()
       }
       
-      const eventSource = new EventSource(`/api/batches/${batchId}/events?selectedIndices=${Array.from(selectedIds).join(',')}`)
+      const eventSource = new EventSource(`/api/batches/${batchId}/events?selectedIndices=${Array.from(selectedProductIds).join(',')}`)
       eventSourceRef.current = eventSource
       
       eventSource.onmessage = (event) => {
@@ -1039,7 +1076,7 @@ function BatchOversattningContent() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          indices: Array.from(selectedIds),
+          indices: Array.from(selectedProductIds),
           optimizeSv: optimizeSv,
           targetLangs: selectedTargetLangs,
           clientPromptSettings: {
@@ -1772,130 +1809,9 @@ function BatchOversattningContent() {
               await handleCreateBatch()
               // Note: selected fields per action are captured in UI state for future API use
             }}
-            ctaDisabled={selectedIds.size === 0 || (actionTranslate && batchTargetLanguages.length === 0)}
+            ctaDisabled={selectedIds.size === 0}
           >
             <div className="space-y-4">
-              {/* Action Selection */}
-              <div className="bg-white p-4 rounded-xl border shadow-sm space-y-4">
-                <div className="px-3 py-2 rounded-md bg-blue-50 border border-blue-200 text-blue-800 text-sm font-medium">⚙️ Välj åtgärder för batchen</div>
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                  {/* Optimize card */}
-                  <div className={`rounded-lg border ${actionOptimize ? 'border-blue-300' : 'border-gray-200'} p-4 bg-gray-50`}>
-                    <label className="inline-flex items-center gap-2 mb-2">
-                      <input type="checkbox" className="h-4 w-4" checked={actionOptimize} onChange={(e) => setActionOptimize(e.target.checked)} />
-                      <span className="font-medium">Berika/optimera</span>
-                    </label>
-                    {actionOptimize && (
-                      <>
-                        <p className="text-sm text-gray-700 mb-2">Välj kolumner:</p>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                          {fieldOptions.map(opt => (
-                            <label key={`opt-${opt.key}`} className="inline-flex items-center gap-2">
-                              <input
-                                type="checkbox"
-                                className="h-4 w-4"
-                                checked={optimizeFields.has(opt.key)}
-                                onChange={(e) => {
-                                  setOptimizeFields(prev => {
-                                    const next = new Set(prev)
-                                    if (e.target.checked) next.add(opt.key); else next.delete(opt.key)
-                                    return next
-                                  })
-                                }}
-                              />
-                              <span>{opt.label}</span>
-                            </label>
-                          ))}
-                        </div>
-                      </>
-                    )}
-                  </div>
-
-                  {/* Translate card */}
-                  <div className={`rounded-lg border ${actionTranslate ? 'border-blue-300' : 'border-gray-200'} p-4 bg-gray-50`}>
-                    <label className="inline-flex items-center gap-2 mb-2">
-                      <input type="checkbox" className="h-4 w-4" checked={actionTranslate} onChange={(e) => setActionTranslate(e.target.checked)} />
-                      <span className="font-medium">Översätta</span>
-                    </label>
-                    {actionTranslate && (
-                      <>
-                        <p className="text-sm text-gray-700 mb-2">Välj kolumner:</p>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                          {fieldOptions.map(opt => (
-                            <label key={`tr-${opt.key}`} className="inline-flex items-center gap-2">
-                              <input
-                                type="checkbox"
-                                className="h-4 w-4"
-                                checked={translateFields.has(opt.key)}
-                                onChange={(e) => {
-                                  setTranslateFields(prev => {
-                                    const next = new Set(prev)
-                                    if (e.target.checked) next.add(opt.key); else next.delete(opt.key)
-                                    return next
-                                  })
-                                }}
-                              />
-                              <span>{opt.label}</span>
-                            </label>
-                          ))}
-                        </div>
-                      </>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              {/* Language Selection */}
-              {actionTranslate && (
-              <div className="bg-gray-50 p-4 rounded-lg border">
-                <h4 className="text-md font-medium text-gray-700 mb-3">
-                  Välj språk för översättning
-                </h4>
-                {requiredLanguages.length > 0 && (
-                  <div className="mb-3 p-2 bg-blue-50 border border-blue-200 rounded text-sm">
-                    <p className="text-blue-800 font-medium">📋 Upptäckta språk i filen:</p>
-                    <p className="text-blue-700">{requiredLanguages.map(lang => codeToCountry(lang).display).join(', ')}</p>
-                    {requiredLanguages.includes('sv') && (
-                      <p className="text-green-700 text-xs mt-1">🇸🇪 Svenska används som källspråk för översättningen</p>
-                    )}
-                    <p className="text-blue-600 text-xs mt-1">Andra språk är automatiskt markerade men kan avmarkeras. Välj vilka du vill översätta till.</p>
-                  </div>
-                )}
-                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-                  {translationLanguages.map((langCode) => {
-                    const isRequired = requiredLanguages.includes(langCode)
-                    return (
-                      <div key={langCode} className="flex items-center space-x-2">
-                        <input
-                          type="checkbox"
-                          id={`batch-lang-${langCode}`}
-                          checked={batchTargetLanguages.includes(langCode)}
-                          onChange={() => {
-                            if (batchTargetLanguages.includes(langCode)) {
-                              setBatchTargetLanguages(batchTargetLanguages.filter(l => l !== langCode))
-                            } else {
-                              setBatchTargetLanguages([...batchTargetLanguages, langCode])
-                            }
-                          }}
-                          className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                        />
-                        <label 
-                          htmlFor={`batch-lang-${langCode}`} 
-                          className="text-sm flex items-center space-x-1 cursor-pointer text-gray-700"
-                        >
-                          <span className="text-lg">{codeToCountry(langCode).emoji}</span>
-                          <span>{codeToCountry(langCode).display}</span>
-                          {isRequired && <span className="text-xs text-blue-600 font-medium">(i filen)</span>}
-                        </label>
-                      </div>
-                    )
-                  })}
-                </div>
-                {batchTargetLanguages.length === 0 && (
-                  <p className="text-sm text-amber-600 mt-2">⚠️ Välj minst ett språk för översättning</p>
-                )}
-              </div>
-              )}
 
               <div className="flex justify-between items-center">
                 <h3 className="text-lg font-medium">
@@ -2166,6 +2082,12 @@ function BatchOversattningContent() {
               icon={jobType === 'product_texts' ? '✨' : '🌐'}
               isActive={currentStep >= 3}
               isCompleted={currentStep > 3}
+              ctaText={jobType === 'product_texts' ? 'Starta optimering & översättning' : 'Starta översättning'}
+              onCtaClick={async () => {
+                // Start optimization and translation process
+                await handleCombinedProcess()
+              }}
+              ctaDisabled={!actionOptimize && !actionTranslate || (actionTranslate && batchTargetLanguages.length === 0) || selectedProductIds.size === 0}
             >
             <div className="space-y-6">
               {/* Back to language selection button */}
@@ -2180,6 +2102,128 @@ function BatchOversattningContent() {
                   <span>Tillbaka till språkval</span>
                 </button>
               </div>
+
+              {/* Action Selection */}
+              <div className="bg-white p-4 rounded-xl border shadow-sm space-y-4">
+                <div className="px-3 py-2 rounded-md bg-blue-50 border border-blue-200 text-blue-800 text-sm font-medium">⚙️ Välj åtgärder för batchen</div>
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  {/* Optimize card */}
+                  <div className={`rounded-lg border ${actionOptimize ? 'border-blue-300' : 'border-gray-200'} p-4 bg-gray-50`}>
+                    <label className="inline-flex items-center gap-2 mb-2">
+                      <input type="checkbox" className="h-4 w-4" checked={actionOptimize} onChange={(e) => setActionOptimize(e.target.checked)} />
+                      <span className="font-medium">Berika/optimera</span>
+                    </label>
+                    {actionOptimize && (
+                      <>
+                        <p className="text-sm text-gray-700 mb-2">Välj kolumner:</p>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                          {fieldOptions.map(opt => (
+                            <label key={`opt-${opt.key}`} className="inline-flex items-center gap-2">
+                              <input
+                                type="checkbox"
+                                className="h-4 w-4"
+                                checked={optimizeFields.has(opt.key)}
+                                onChange={(e) => {
+                                  setOptimizeFields(prev => {
+                                    const next = new Set(prev)
+                                    if (e.target.checked) next.add(opt.key); else next.delete(opt.key)
+                                    return next
+                                  })
+                                }}
+                              />
+                              <span>{opt.label}</span>
+                            </label>
+                          ))}
+                        </div>
+                      </>
+                    )}
+                  </div>
+
+                  {/* Translate card */}
+                  <div className={`rounded-lg border ${actionTranslate ? 'border-blue-300' : 'border-gray-200'} p-4 bg-gray-50`}>
+                    <label className="inline-flex items-center gap-2 mb-2">
+                      <input type="checkbox" className="h-4 w-4" checked={actionTranslate} onChange={(e) => setActionTranslate(e.target.checked)} />
+                      <span className="font-medium">Översätta</span>
+                    </label>
+                    {actionTranslate && (
+                      <>
+                        <p className="text-sm text-gray-700 mb-2">Välj kolumner:</p>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                          {fieldOptions.map(opt => (
+                            <label key={`tr-${opt.key}`} className="inline-flex items-center gap-2">
+                              <input
+                                type="checkbox"
+                                className="h-4 w-4"
+                                checked={translateFields.has(opt.key)}
+                                onChange={(e) => {
+                                  setTranslateFields(prev => {
+                                    const next = new Set(prev)
+                                    if (e.target.checked) next.add(opt.key); else next.delete(opt.key)
+                                    return next
+                                  })
+                                }}
+                              />
+                              <span>{opt.label}</span>
+                            </label>
+                          ))}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Language Selection */}
+              {actionTranslate && (
+              <div className="bg-gray-50 p-4 rounded-lg border">
+                <h4 className="text-md font-medium text-gray-700 mb-3">
+                  Välj språk för översättning
+                </h4>
+                {requiredLanguages.length > 0 && (
+                  <div className="mb-3 p-2 bg-blue-50 border border-blue-200 rounded text-sm">
+                    <p className="text-blue-800 font-medium">📋 Upptäckta språk i filen:</p>
+                    <p className="text-blue-700">{requiredLanguages.map(lang => codeToCountry(lang).display).join(', ')}</p>
+                    {requiredLanguages.includes('sv') && (
+                      <p className="text-green-700 text-xs mt-1">🇸🇪 Svenska används som källspråk för översättningen</p>
+                    )}
+                    <p className="text-blue-600 text-xs mt-1">Andra språk är automatiskt markerade men kan avmarkeras. Välj vilka du vill översätta till.</p>
+                  </div>
+                )}
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+                  {translationLanguages.map((langCode) => {
+                    const isRequired = requiredLanguages.includes(langCode)
+                    return (
+                      <div key={langCode} className="flex items-center space-x-2">
+                        <input
+                          type="checkbox"
+                          id={`batch-lang-${langCode}`}
+                          checked={batchTargetLanguages.includes(langCode)}
+                          onChange={() => {
+                            if (batchTargetLanguages.includes(langCode)) {
+                              setBatchTargetLanguages(batchTargetLanguages.filter(l => l !== langCode))
+                            } else {
+                              setBatchTargetLanguages([...batchTargetLanguages, langCode])
+                            }
+                          }}
+                          className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                        />
+                        <label 
+                          htmlFor={`batch-lang-${langCode}`} 
+                          className="text-sm flex items-center space-x-1 cursor-pointer text-gray-700"
+                        >
+                          <span className="text-lg">{codeToCountry(langCode).emoji}</span>
+                          <span>{codeToCountry(langCode).display}</span>
+                          {isRequired && <span className="text-xs text-blue-600 font-medium">(i filen)</span>}
+                        </label>
+                      </div>
+                    )
+                  })}
+                </div>
+                {batchTargetLanguages.length === 0 && (
+                  <p className="text-sm text-amber-600 mt-2">⚠️ Välj minst ett språk för översättning</p>
+                )}
+              </div>
+              )}
               
               {jobType === 'product_texts' && (
                 <div className="space-y-4">
@@ -2316,6 +2360,173 @@ function BatchOversattningContent() {
                 </div>
               )}
 
+              {/* Product Selection Table - Same as step 2 */}
+              {(() => {
+                const shouldShow = jobType === 'product_texts' && currentStep === 3 && batchId
+                console.log('[DEBUG] Step 3 table visibility check:', {
+                  jobType,
+                  currentStep,
+                  batchId,
+                  shouldShow,
+                  selectedBatchProducts: selectedBatch?.products?.length || 0,
+                  parsedProductsLength: parsedProducts.length
+                })
+                return shouldShow
+              })() && (
+                <div className="space-y-4">
+                  <div className="bg-white p-4 rounded-xl border shadow-sm">
+                    <div className="px-3 py-2 rounded-md bg-blue-50 border border-blue-200 text-blue-800 text-sm font-medium mb-4">
+                      📦 Välj produkter att optimera/översätta ({selectedProductIds.size} av {(selectedBatch?.products || parsedProducts).length} valda)
+                    </div>
+                    
+                    {/* Product table - Same structure as step 2 */}
+                    <div className="max-h-96 overflow-y-auto border border-gray-200 rounded-md">
+                      <table className="w-full text-xs">
+                        <thead className="bg-gray-50 sticky top-0">
+                          <tr>
+                            <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-8">
+                              <input
+                                type="checkbox"
+                                checked={selectedProductIds.size === (selectedBatch?.products || parsedProducts).length && (selectedBatch?.products || parsedProducts).length > 0}
+                                onChange={() => {
+                                  const products = selectedBatch?.products || parsedProducts
+                                  if (selectedProductIds.size === products.length) {
+                                    setSelectedProductIds(new Set())
+                                  } else {
+                                    setSelectedProductIds(new Set(products.map((p: Product) => p.id)))
+                                  }
+                                }}
+                                className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                              />
+                            </th>
+                            <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">ARTIKELNUMMER</th>
+                            <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">VARIANTAV</th>
+                            <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">NAMN, SV-SE</th>
+                            <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">KORT BESKRIVNING, SV-SE</th>
+                            <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">BESKRIVNING (ID: DESCRIPTIONHTML), SV-SE</th>
+                            <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">SÖKMOTORANPASSAD TITEL, SV-SE</th>
+                            <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">SÖKMOTORANPASSAD BESKRIVNING, SV-SE</th>
+                          </tr>
+                        </thead>
+                        <tbody className="bg-white divide-y divide-gray-200">
+                          {(selectedBatch?.products || parsedProducts).slice(0, visibleRows).map((product: Product, index: number) => (
+                            <tr key={product.id} className="hover:bg-gray-50">
+                              <td className="px-2 py-1 whitespace-nowrap">
+                                <input
+                                  type="checkbox"
+                                  checked={selectedProductIds.has(product.id)}
+                                  onChange={() => {
+                                    setSelectedProductIds(prev => {
+                                      const next = new Set(prev)
+                                      if (next.has(product.id)) {
+                                        next.delete(product.id)
+                                      } else {
+                                        next.add(product.id)
+                                      }
+                                      return next
+                                    })
+                                  }}
+                                  className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                />
+                              </td>
+                              {(() => {
+                                try {
+                                  const rawData = typeof product.raw_data === 'string' ? JSON.parse(product.raw_data) : (product.raw_data || {})
+                                  // Normalize helper for flexible header matching (same as step 2)
+                                  const normalizeKey = (s: string) => s.toLowerCase().replace(/[^a-z0-9åäöæøœ]+/g, '')
+                                  const toPlainString = (v: unknown): string => {
+                                    if (v === null || v === undefined) return ''
+                                    if (typeof v === 'string') return v
+                                    if (typeof v === 'number' || typeof v === 'boolean') return String(v)
+                                    try { return JSON.stringify(v) } catch { return String(v) }
+                                  }
+                                  const normalizedMap: Record<string, string> = {}
+                                  for (const [k, v] of Object.entries(rawData)) {
+                                    normalizedMap[normalizeKey(String(k))] = toPlainString(v)
+                                  }
+                                  const getByAliases = (aliases: string[]): string => {
+                                    for (const a of aliases) {
+                                      const norm = normalizeKey(a)
+                                      if (normalizedMap[norm]) return normalizedMap[norm]
+                                    }
+                                    return ''
+                                  }
+                                  const aliasMap: Record<string, string[]> = {
+                                    'Artikelnummer': ['Artikelnummer', 'Artikel nr', 'Art nr', 'Artikelnr', 'ArtNr', 'SKU', 'Artikelnummer*'],
+                                    'VariantAv': ['VariantAv', 'Variant Av', 'Variant-Av', 'VariantOf', 'Parent', 'Parent SKU'],
+                                    'Beskrivning (id: DescriptionHtml), sv-SE': [
+                                      'Beskrivning (id: DescriptionHtml), sv-SE',
+                                      'Beskrivning, sv-SE',
+                                      'Beskrivning',
+                                      'Description',
+                                      'Long description',
+                                      'DescriptionHtml'
+                                    ],
+                                    'Sökmotoranpassad titel, sv-SE': [
+                                      'Sökmotoranpassad titel, sv-SE',
+                                      'Sökmotoranpassad titel',
+                                      'SEO title',
+                                      'Title SEO'
+                                    ],
+                                    'Sökmotoranpassad beskrivning, sv-SE': [
+                                      'Sökmotoranpassad beskrivning, sv-SE',
+                                      'Sökmotoranpassad beskrivning',
+                                      'SEO description',
+                                      'Meta description'
+                                    ],
+                                  }
+                                  const artikelnummer = getByAliases(aliasMap['Artikelnummer']) || '-'
+                                  const variantAv = getByAliases(aliasMap['VariantAv']) || '-'
+                                  const longDesc = getByAliases(aliasMap['Beskrivning (id: DescriptionHtml), sv-SE']) || '-'
+                                  const seoTitle = getByAliases(aliasMap['Sökmotoranpassad titel, sv-SE']) || '-'
+                                  const seoDesc = getByAliases(aliasMap['Sökmotoranpassad beskrivning, sv-SE']) || '-'
+
+                                  return (
+                                    <>
+                                      <td className="px-2 py-1 text-sm text-gray-900">{artikelnummer || '-'}</td>
+                                      <td className="px-2 py-1 text-sm text-gray-900">{variantAv || '-'}</td>
+                                      <td className="px-2 py-1 text-sm text-gray-900">{product.name_sv || '-'}</td>
+                                      <td className="px-2 py-1 text-sm text-gray-900">{product.description_sv || '-'}</td>
+                                      <td className="px-2 py-1 text-sm text-gray-900">{longDesc || '-'}</td>
+                                      <td className="px-2 py-1 text-sm text-gray-900">{seoTitle || '-'}</td>
+                                      <td className="px-2 py-1 text-sm text-gray-900">{seoDesc || '-'}</td>
+                                    </>
+                                  )
+                                } catch {
+                                  return (
+                                    <>
+                                      <td className="px-2 py-1 text-sm text-gray-900">-</td>
+                                      <td className="px-2 py-1 text-sm text-gray-900">-</td>
+                                      <td className="px-2 py-1 text-sm text-gray-900">{product.name_sv || '-'}</td>
+                                      <td className="px-2 py-1 text-sm text-gray-900">{product.description_sv || '-'}</td>
+                                      <td className="px-2 py-1 text-sm text-gray-900">-</td>
+                                      <td className="px-2 py-1 text-sm text-gray-900">-</td>
+                                      <td className="px-2 py-1 text-sm text-gray-900">-</td>
+                                    </>
+                                  )
+                                }
+                              })()}
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    
+                    {/* Show more/less button */}
+                    {(selectedBatch?.products || parsedProducts).length > visibleRows && (
+                      <div className="mt-4 text-center">
+                        <button
+                          onClick={() => setVisibleRows(visibleRows === 200 ? (selectedBatch?.products || parsedProducts).length : 200)}
+                          className="text-sm text-blue-600 hover:text-blue-800 font-medium"
+                        >
+                          {visibleRows === 200 ? `Visa alla ${(selectedBatch?.products || parsedProducts).length} produkter` : 'Visa färre'}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
               {/* Progress bars */}
               {phase === 'optimizing' && progress && (
                 <ProgressBar
@@ -2380,7 +2591,7 @@ function BatchOversattningContent() {
                     </button>
                     <button
                       onClick={handleCombinedProcess}
-                      disabled={!batchId || selectedIds.size === 0 || (!optimizeSv && selectedTargetLangs.length === 0)}
+                      disabled={!batchId || selectedProductIds.size === 0 || (!optimizeSv && selectedTargetLangs.length === 0)}
                       className="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-sm font-medium"
                     >
                       🚀 Kör översättning
@@ -2392,12 +2603,12 @@ function BatchOversattningContent() {
                     >
                       📊 Exportera Excel
                     </button>
-                    {selectedIds.size === 0 && (
+                    {selectedProductIds.size === 0 && (
                       <span className="text-sm text-gray-500 flex items-center">
                         Välj produkter att bearbeta
                       </span>
                     )}
-                    {selectedIds.size > 0 && !optimizeSv && selectedTargetLangs.length === 0 && (
+                    {selectedProductIds.size > 0 && !optimizeSv && selectedTargetLangs.length === 0 && (
                       <span className="text-sm text-gray-500 flex items-center">
                         Välj "Optimera svenska först" eller skapa en batch med språk valda
                       </span>

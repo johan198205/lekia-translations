@@ -34,6 +34,7 @@ export async function GET(
             description_sv: true,
             attributes: true,
             tone_hint: true,
+            raw_data: true,
             optimized_sv: true,
             translated_da: true,
             translated_nb: true,
