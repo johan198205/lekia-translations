@@ -38,8 +38,22 @@ export interface NormalizeResult {
 }
 
 const HEADER_ALIASES = {
-  name_sv: ['product_name_sv', 'name_sv', 'product_name', 'name'],
-  description_sv: ['description_sv', 'description', 'product_description'],
+  name_sv: [
+    'product_name_sv', 'name_sv', 'product_name', 'name',
+    'namn_sv-se', 'namn_sv_se', 'namn,sv-se', 'namn, sv-se', 'namn sv-se',
+    'produktnamn', 'title', 'namn'
+  ],
+  description_sv: [
+    'description_sv', 'description', 'product_description',
+    '"beskrivning (id: descriptionhtml)",sv-se', 'beskrivning (id: descriptionhtml),sv-se',
+    'beskrivning (id: descriptionhtml), sv-se', 'beskrivning (id: descriptionhtml) sv-se',
+    'beskrivning_id_descriptionhtml_sv-se', 'beskrivning_id_descriptionhtml_sv_se',
+    'kort_beskrivning_sv-se', 'kort_beskrivning_sv_se',
+    'kort beskrivning,sv-se', 'kort beskrivning, sv-se', 'kort beskrivning sv-se',
+    'sökmotoranpassad_beskrivning_sv-se', 'sökmotoranpassad_beskrivning_sv_se',
+    'sökmotoranpassad beskrivning,sv-se', 'sökmotoranpassad beskrivning, sv-se',
+    'sökmotoranpassad beskrivning sv-se'
+  ],
   attributes: ['attributes', 'spec', 'specification', 'specs'],
   tone_hint: ['tone_hint', 'tone', 'style'],
 } as const;
@@ -87,10 +101,12 @@ export async function normalize(buffer: Buffer | ArrayBuffer, jobType: 'product_
 
 async function normalizeProducts(worksheet: ExcelJS.Worksheet): Promise<NormalizeResult> {
   const headers = getNormalizedHeaders(worksheet);
+  console.log('[NORMALIZE] Headers found:', headers);
   validateRequiredColumns(headers, 'product_texts');
   
   // Extract tokens from all column headers
   const allHeaders = getAllHeaders(worksheet);
+  console.log('[NORMALIZE] All headers:', allHeaders);
   let extractedTokens;
   try {
     extractedTokens = extractTokens(allHeaders);
@@ -115,10 +131,13 @@ async function normalizeProducts(worksheet: ExcelJS.Worksheet): Promise<Normaliz
     }
     
     const product = parseProductRow(row, headers);
+    console.log(`[NORMALIZE] Row ${rowNumber}:`, product ? 'parsed successfully' : 'failed to parse');
     if (product) {
       products.push(product);
     }
   });
+
+  console.log(`[NORMALIZE] Total products parsed: ${products.length}, skipped: ${skipped}`);
 
   return {
     products,
@@ -178,18 +197,81 @@ function getNormalizedHeaders(worksheet: ExcelJS.Worksheet): Record<string, numb
   const headerRow = worksheet.getRow(1);
   const headers: Record<string, number> = {};
   
+  // First pass: find all matching columns
+  const matchingColumns: Record<string, number[]> = {};
+  
   headerRow.eachCell((cell, colNumber) => {
-    const headerValue = String(cell.value || '').trim().toLowerCase();
+    const headerValue = String(cell.value || '').trim();
+    const lowerHeaderValue = headerValue.toLowerCase();
+    
+    console.log(`[HEADERS] Column ${colNumber}: "${headerValue}" (lowercase: "${lowerHeaderValue}")`);
     
     for (const [normalizedKey, aliases] of Object.entries(HEADER_ALIASES)) {
-      if (aliases.some(alias => alias.toLowerCase() === headerValue)) {
-        headers[normalizedKey] = colNumber;
+      if (aliases.some(alias => alias.toLowerCase() === lowerHeaderValue)) {
+        if (!matchingColumns[normalizedKey]) {
+          matchingColumns[normalizedKey] = [];
+        }
+        matchingColumns[normalizedKey].push(colNumber);
+        console.log(`[HEADERS] ✅ Matched "${headerValue}" to ${normalizedKey} (column ${colNumber})`);
         break;
       }
     }
   });
   
+  // Second pass: for description_sv, find the first column that has data
+  if (matchingColumns.description_sv) {
+    console.log(`[HEADERS] Found ${matchingColumns.description_sv.length} description columns:`, matchingColumns.description_sv);
+    
+    // Check each description column to see which one has data
+    for (const colNumber of matchingColumns.description_sv) {
+      const hasData = checkColumnHasData(worksheet, colNumber);
+      console.log(`[HEADERS] Column ${colNumber} has data:`, hasData);
+      
+      if (hasData) {
+        headers.description_sv = colNumber;
+        console.log(`[HEADERS] ✅ Selected column ${colNumber} for description_sv (has data)`);
+        break;
+      }
+    }
+    
+    // If no column has data, use the first one
+    if (!headers.description_sv && matchingColumns.description_sv.length > 0) {
+      headers.description_sv = matchingColumns.description_sv[0];
+      console.log(`[HEADERS] ⚠️ No description column has data, using first: ${headers.description_sv}`);
+    }
+  }
+  
+  // For other columns, use the first match
+  for (const [normalizedKey, columns] of Object.entries(matchingColumns)) {
+    if (normalizedKey !== 'description_sv' && columns.length > 0) {
+      headers[normalizedKey] = columns[0];
+    }
+  }
+  
+  console.log('[HEADERS] Final normalized headers:', headers);
   return headers;
+}
+
+function checkColumnHasData(worksheet: ExcelJS.Worksheet, colNumber: number): boolean {
+  let hasData = false;
+  let rowCount = 0;
+  
+  worksheet.eachRow((row, rowNumber) => {
+    if (rowNumber === 1) return; // Skip header row
+    
+    rowCount++;
+    if (rowCount > 10) return; // Only check first 10 rows
+    
+    const cell = row.getCell(colNumber);
+    const value = String(cell.value || '').trim();
+    
+    if (value && value.length > 0) {
+      hasData = true;
+      console.log(`[HEADERS] Found data in column ${colNumber}, row ${rowNumber}: "${value.substring(0, 50)}..."`);
+    }
+  });
+  
+  return hasData;
 }
 
 function getAllHeaders(worksheet: ExcelJS.Worksheet): string[] {
@@ -261,11 +343,18 @@ function validateRequiredColumns(headers: Record<string, number>, jobType: 'prod
   const requiredColumns = REQUIRED_COLUMNS[jobType] || [];
   const missingColumns = requiredColumns.filter(col => !(col in headers));
   
+  console.log(`[VALIDATE] Required columns for ${jobType}:`, requiredColumns);
+  console.log(`[VALIDATE] Found headers:`, Object.keys(headers));
+  console.log(`[VALIDATE] Missing columns:`, missingColumns);
+  
   if (missingColumns.length > 0) {
+    console.error(`[VALIDATE] ❌ Missing required columns: ${missingColumns.join(', ')}`);
     throw new NormalizationError(
       `Missing required columns: ${missingColumns.join(', ')}`
     );
   }
+  
+  console.log(`[VALIDATE] ✅ All required columns found`);
 }
 
 function isEmptyRow(row: ExcelJS.Row): boolean {
@@ -282,9 +371,16 @@ function parseProductRow(row: ExcelJS.Row, headers: Record<string, number>): Pro
   const name_sv = getCellValue(row, headers.name_sv);
   const description_sv = getCellValue(row, headers.description_sv);
   
-  if (!name_sv || !description_sv) {
+  console.log(`[PARSE] Row ${row.number}: name_sv="${name_sv}", description_sv="${description_sv}"`);
+  
+  if (!name_sv) {
+    console.log(`[PARSE] Row ${row.number}: Missing required field - name_sv: ${!!name_sv}`);
     return null;
   }
+  
+  // If description is empty, use name as description
+  const finalDescription = description_sv || name_sv;
+  console.log(`[PARSE] Row ${row.number}: Using description: "${finalDescription}"`);
   
   const attributes = headers.attributes ? getCellValue(row, headers.attributes) : undefined;
   const tone_hint = headers.tone_hint ? getCellValue(row, headers.tone_hint) : undefined;
@@ -300,7 +396,7 @@ function parseProductRow(row: ExcelJS.Row, headers: Record<string, number>): Pro
   
   return {
     name_sv: name_sv.trim(),
-    description_sv: truncateDescription(description_sv.trim()),
+    description_sv: truncateDescription(finalDescription.trim()),
     attributes: attributes?.trim(),
     tone_hint: tone_hint?.trim(),
     raw_data: rawData,

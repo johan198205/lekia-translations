@@ -492,7 +492,14 @@ function BatchOversattningContent() {
   }
 
   const handleUpload = async () => {
-    if (!file || isUploading) return
+    console.log('[UPLOAD] Starting upload process...')
+    console.log('[UPLOAD] File:', file)
+    console.log('[UPLOAD] JobType:', jobType)
+    
+    if (!file || isUploading) {
+      console.log('[UPLOAD] Aborting - no file or already uploading')
+      return
+    }
 
     setIsUploading(true)
     setError('')
@@ -501,6 +508,8 @@ function BatchOversattningContent() {
     const formData = new FormData()
     formData.append('file', file)
     formData.append('jobType', jobType)
+    
+    console.log('[UPLOAD] FormData created, sending request...')
 
     try {
       const response = await fetch('/api/upload', {
@@ -510,6 +519,9 @@ function BatchOversattningContent() {
 
       if (response.ok) {
         const data = await response.json()
+        console.log('[UPLOAD] Response data:', data)
+        console.log('[UPLOAD] Products array:', data.products)
+        console.log('[UPLOAD] Products length:', data.products?.length)
         
         if (jobType === 'product_texts' && data.products) {
           setProductsCount(data.products.length)
@@ -1518,12 +1530,19 @@ function BatchOversattningContent() {
                 : undefined
             })()}
             onCtaClick={async () => {
+              console.log('[CTA] CTA clicked!')
+              console.log('[CTA] sourceType:', sourceType)
+              console.log('[CTA] file:', !!file)
+              console.log('[CTA] selectedUpload:', !!selectedUpload)
+              console.log('[CTA] selectedBatch:', !!selectedBatch)
+              
               if (sourceType === 'existing' && selectedUpload && selectedBatch) {
                 // For existing batches, the step transition is handled in handleBatchSelect
                 // This CTA is now redundant since batch selection automatically advances to step 3
-                console.log('CTA clicked for existing batch - step transition handled by handleBatchSelect')
+                console.log('[CTA] Handling existing batch - step transition handled by handleBatchSelect')
               } else if (sourceType === 'new' && file) {
                 // For new files, upload (handleUpload will set step 2)
+                console.log('[CTA] Calling handleUpload for new file...')
                 await handleUpload()
               }
             }}

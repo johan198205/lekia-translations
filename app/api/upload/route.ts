@@ -56,7 +56,19 @@ export async function POST(request: NextRequest) {
     const buffer = Buffer.from(await file.arrayBuffer());
 
     // Normalize Excel data
-    const result = await normalize(buffer, jobType as 'product_texts' | 'ui_strings');
+    console.log('[UPLOAD API] Starting normalization...');
+    let result;
+    try {
+      result = await normalize(buffer, jobType as 'product_texts' | 'ui_strings');
+      console.log('[UPLOAD API] Normalization result:', {
+        productsCount: result.products?.length || 0,
+        uiStringsCount: result.uiStrings?.length || 0,
+        meta: result.meta
+      });
+    } catch (error) {
+      console.error('[UPLOAD API] Normalization failed:', error);
+      throw error;
+    }
 
     // Prepare meta data with tokens, locales, detected languages, and headers
     let metaData = null;
