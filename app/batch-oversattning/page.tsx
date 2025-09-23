@@ -203,6 +203,19 @@ function BatchOversattningContent() {
   const [selectedTargetLangs, setSelectedTargetLangs] = useState<string[]>([])
   const [batchTargetLanguages, setBatchTargetLanguages] = useState<string[]>([])
   const [requiredLanguages, setRequiredLanguages] = useState<string[]>([])
+  // Action selection state
+  const [actionOptimize, setActionOptimize] = useState<boolean>(false)
+  const [actionTranslate, setActionTranslate] = useState<boolean>(false)
+  // Field selection per action (UI only for now)
+  const fieldOptions = [
+    { key: 'name_sv', label: 'Namn, sv-SE' },
+    { key: 'short_sv', label: 'Kort beskrivning, sv-SE' },
+    { key: 'description_html_sv', label: 'Beskrivning (id: DescriptionHtml), sv-SE' },
+    { key: 'seo_title_sv', label: 'Sökmotoranpassad titel, sv-SE' },
+    { key: 'seo_description_sv', label: 'Sökmotoranpassad beskrivning, sv-SE' },
+  ] as const
+  const [optimizeFields, setOptimizeFields] = useState<Set<string>>(new Set())
+  const [translateFields, setTranslateFields] = useState<Set<string>>(new Set())
   const [drawerProduct, setDrawerProduct] = useState<Product | null>(null)
   const [drawerField, setDrawerField] = useState<'description_sv' | 'optimized_sv' | 'translated_no' | 'translated_da' | 'translated_en' | 'translated_de' | 'translated_fr' | 'translated_es' | 'translated_it' | 'translated_pt' | 'translated_nl' | 'translated_pl' | 'translated_ru' | 'translated_fi' | null>(null)
   const [isDrawerOpen, setIsDrawerOpen] = useState(false)
@@ -226,6 +239,11 @@ function BatchOversattningContent() {
     }
   })
   
+  // Keep legacy optimizeSv in sync with actionOptimize for processing
+  useEffect(() => {
+    setOptimizeSv(actionOptimize)
+  }, [actionOptimize])
+
   const eventSourceRef = useRef<EventSource | null>(null)
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
@@ -383,9 +401,8 @@ function BatchOversattningContent() {
           const metaData = await metaResponse.json()
           detectedLanguages = metaData.meta?.detectedLanguages || []
           setRequiredLanguages(detectedLanguages)
-          // Auto-select detected languages (but exclude Swedish as it's the source language)
-          const targetLanguages = detectedLanguages.filter(lang => lang !== 'sv')
-          setBatchTargetLanguages(targetLanguages)
+          // Do not auto-select; prefill required list only
+          setBatchTargetLanguages([])
         }
 
         const endpoint = upload.job_type === 'product_texts' 
@@ -564,9 +581,8 @@ function BatchOversattningContent() {
           
           // Set detected languages
           setRequiredLanguages(detectedLanguages)
-          // Auto-select detected languages (but exclude Swedish as it's the source language)
-          const targetLanguages = detectedLanguages.filter(lang => lang !== 'sv')
-          setBatchTargetLanguages(targetLanguages)
+          // Do not auto-select detected languages
+          setBatchTargetLanguages([])
           
           setUploadAlert(`✅ Fil uppladdad! ${data.uiStrings.length} UI-element hittades. Upptäckta språk: ${locales.join(', ')}. Välj vilka språk du vill översätta.`)
         } else if (jobType === 'brands' && data.brands) {
@@ -1754,12 +1770,83 @@ function BatchOversattningContent() {
             ctaText="Skapa batch"
             onCtaClick={async () => {
               await handleCreateBatch()
-              // setCurrentStep(3) is now handled inside handleCreateBatch
+              // Note: selected fields per action are captured in UI state for future API use
             }}
-            ctaDisabled={selectedIds.size === 0 || batchTargetLanguages.length === 0}
+            ctaDisabled={selectedIds.size === 0 || (actionTranslate && batchTargetLanguages.length === 0)}
           >
             <div className="space-y-4">
+              {/* Action Selection */}
+              <div className="bg-white p-4 rounded-xl border shadow-sm space-y-4">
+                <div className="px-3 py-2 rounded-md bg-blue-50 border border-blue-200 text-blue-800 text-sm font-medium">⚙️ Välj åtgärder för batchen</div>
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  {/* Optimize card */}
+                  <div className={`rounded-lg border ${actionOptimize ? 'border-blue-300' : 'border-gray-200'} p-4 bg-gray-50`}>
+                    <label className="inline-flex items-center gap-2 mb-2">
+                      <input type="checkbox" className="h-4 w-4" checked={actionOptimize} onChange={(e) => setActionOptimize(e.target.checked)} />
+                      <span className="font-medium">Berika/optimera</span>
+                    </label>
+                    {actionOptimize && (
+                      <>
+                        <p className="text-sm text-gray-700 mb-2">Välj kolumner:</p>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                          {fieldOptions.map(opt => (
+                            <label key={`opt-${opt.key}`} className="inline-flex items-center gap-2">
+                              <input
+                                type="checkbox"
+                                className="h-4 w-4"
+                                checked={optimizeFields.has(opt.key)}
+                                onChange={(e) => {
+                                  setOptimizeFields(prev => {
+                                    const next = new Set(prev)
+                                    if (e.target.checked) next.add(opt.key); else next.delete(opt.key)
+                                    return next
+                                  })
+                                }}
+                              />
+                              <span>{opt.label}</span>
+                            </label>
+                          ))}
+                        </div>
+                      </>
+                    )}
+                  </div>
+
+                  {/* Translate card */}
+                  <div className={`rounded-lg border ${actionTranslate ? 'border-blue-300' : 'border-gray-200'} p-4 bg-gray-50`}>
+                    <label className="inline-flex items-center gap-2 mb-2">
+                      <input type="checkbox" className="h-4 w-4" checked={actionTranslate} onChange={(e) => setActionTranslate(e.target.checked)} />
+                      <span className="font-medium">Översätta</span>
+                    </label>
+                    {actionTranslate && (
+                      <>
+                        <p className="text-sm text-gray-700 mb-2">Välj kolumner:</p>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                          {fieldOptions.map(opt => (
+                            <label key={`tr-${opt.key}`} className="inline-flex items-center gap-2">
+                              <input
+                                type="checkbox"
+                                className="h-4 w-4"
+                                checked={translateFields.has(opt.key)}
+                                onChange={(e) => {
+                                  setTranslateFields(prev => {
+                                    const next = new Set(prev)
+                                    if (e.target.checked) next.add(opt.key); else next.delete(opt.key)
+                                    return next
+                                  })
+                                }}
+                              />
+                              <span>{opt.label}</span>
+                            </label>
+                          ))}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </div>
+              </div>
+
               {/* Language Selection */}
+              {actionTranslate && (
               <div className="bg-gray-50 p-4 rounded-lg border">
                 <h4 className="text-md font-medium text-gray-700 mb-3">
                   Välj språk för översättning
@@ -1808,6 +1895,7 @@ function BatchOversattningContent() {
                   <p className="text-sm text-amber-600 mt-2">⚠️ Välj minst ett språk för översättning</p>
                 )}
               </div>
+              )}
 
               <div className="flex justify-between items-center">
                 <h3 className="text-lg font-medium">
