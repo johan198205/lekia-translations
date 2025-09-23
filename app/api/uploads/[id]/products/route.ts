@@ -40,6 +40,7 @@ export async function GET(
         description_sv: product.description_sv,
         attributes: product.attributes,
         tone_hint: product.tone_hint,
+        raw_data: product.raw_data,
         status: product.status,
         batch_id: product.batch_id,
         optimized_sv: product.optimized_sv,

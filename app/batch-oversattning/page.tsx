@@ -138,6 +138,27 @@ function BatchOversattningContent() {
   const [isRegenerating, setIsRegenerating] = useState(false)
   const [isUploading, setIsUploading] = useState(false)
 
+  // Debug: log incoming Excel headers and sample values to validate mapping
+  useEffect(() => {
+    try {
+      if (jobType === 'product_texts' && parsedProducts && parsedProducts.length > 0) {
+        const sample = parsedProducts[0] as any;
+        const rd = sample?.raw_data;
+        const raw = typeof rd === 'string' ? JSON.parse(rd) : (rd || {});
+        const keys = Object.keys(raw || {});
+        console.log('[DEBUG] First product raw_data keys:', keys);
+        const preview: Record<string, any> = {};
+        keys.slice(0, 20).forEach(k => { preview[k] = raw[k]; });
+        console.log('[DEBUG] First product raw_data preview:', preview);
+        // Heuristics for short description columns
+        const candidates = keys.filter(k => k.toLowerCase().includes('kort') && k.toLowerCase().includes('beskriv'));
+        console.log('[DEBUG] Candidate short-description columns:', candidates, candidates.map(k => raw[k]));
+      }
+    } catch (e) {
+      console.warn('[DEBUG] Failed to inspect raw_data', e);
+    }
+  }, [jobType, parsedProducts]);
+
   // Ensure headers are available for brands even if API didn't include them
   useEffect(() => {
     if (jobType === 'brands' && brandsHeaders.length === 0 && parsedBrands.length > 0) {
@@ -1860,14 +1881,20 @@ function BatchOversattningContent() {
                             {header}
                           </th>
                         ))
+                      ) : jobType === 'product_texts' ? (
+                        <>
+                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Artikelnummer</th>
+                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">VariantAv</th>
+                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Namn, sv-SE</th>
+                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Kort beskrivning, sv-SE</th>
+                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Beskrivning (id: DescriptionHtml), sv-SE</th>
+                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Sökmotoranpassad titel, sv-SE</th>
+                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Sökmotoranpassad beskrivning, sv-SE</th>
+                        </>
                       ) : (
                         <>
-                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                            {jobType === 'product_texts' ? 'Produktnamn' : 'Namn'}
-                          </th>
-                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                            {jobType === 'product_texts' ? 'Beskrivning' : 'Värden'}
-                          </th>
+                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Namn</th>
+                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Värden</th>
                         </>
                       )}
                     </tr>
@@ -1901,23 +1928,116 @@ function BatchOversattningContent() {
                                 )
                               })
                             })()
+                          ) : jobType === 'product_texts' ? (
+                            (() => {
+                              // Display only the requested columns from raw_data, with sensible fallbacks
+                              const desiredHeaders = [
+                                'Artikelnummer',
+                                'VariantAv',
+                                'Namn, sv-SE',
+                                'Kort beskrivning, sv-SE',
+                                'Beskrivning (id: DescriptionHtml), sv-SE',
+                                'Sökmotoranpassad titel, sv-SE',
+                                'Sökmotoranpassad beskrivning, sv-SE'
+                              ];
+                              let rawData: Record<string, any> = {};
+                              try {
+                                const rd: any = (item as any).raw_data;
+                                rawData = typeof rd === 'string' ? JSON.parse(rd) : (rd || {});
+                              } catch {}
+                              const product = item as Product;
+                              // Normalize helper for flexible header matching
+                              const normalizeKey = (s: string) => s.toLowerCase().replace(/[^a-z0-9åäöæøœ]+/g, '');
+                              const toPlainString = (v: any): string => {
+                                if (v == null) return '';
+                                if (typeof v === 'string') return v;
+                                if (typeof v === 'number' || typeof v === 'boolean') return String(v);
+                                // ExcelJS rich text
+                                if (typeof v === 'object') {
+                                  // Common shapes
+                                  if (Array.isArray((v as any).richText)) {
+                                    try {
+                                      return ((v as any).richText as any[]).map((t: any) => t.text || '').join('');
+                                    } catch {}
+                                  }
+                                  if (typeof (v as any).text === 'string') {
+                                    return String((v as any).text);
+                                  }
+                                }
+                                try { return JSON.stringify(v); } catch { return String(v); }
+                              };
+                              // Build normalized map once for O(1) lookups
+                              const normalizedMap: Record<string, string> = {};
+                              for (const [k, v] of Object.entries(rawData)) {
+                                normalizedMap[normalizeKey(String(k))] = toPlainString(v);
+                              }
+                              const getByAliases = (aliases: string[], containsHints?: string[]): string => {
+                                const normalizedAliases = aliases.map(normalizeKey);
+                                for (const nk of normalizedAliases) {
+                                  const val = normalizedMap[nk];
+                                  if (val != null && String(val).trim() !== '') return String(val);
+                                }
+                                // Fuzzy: try contains-based hints (normalized substring match)
+                                if (containsHints && containsHints.length > 0) {
+                                  const hints = containsHints.map(normalizeKey);
+                                  for (const [nk, val] of Object.entries(normalizedMap)) {
+                                    if (hints.every(h => nk.includes(h))) {
+                                      if (val != null && String(val).trim() !== '') return String(val);
+                                    }
+                                  }
+                                }
+                                return '';
+                              };
+                              const aliasMap: Record<string, string[]> = {
+                                'Artikelnummer': ['Artikelnummer', 'Artikel nr', 'Art nr', 'Artikelnr', 'ArtNr', 'SKU', 'Artikelnummer*'],
+                                'VariantAv': ['VariantAv', 'Variant Av', 'Variant-Av', 'VariantOf', 'Parent', 'Parent SKU'],
+                                'Namn, sv-SE': ['Namn, sv-SE', 'Namn', 'Namn sv-SE', 'Produktnamn', 'Name', 'Product Name'],
+                                'Kort beskrivning, sv-SE': ['Kort beskrivning, sv-SE', 'Kort beskrivning', 'Kort beskrivn', 'Kort text', 'Short description', 'Short desc'],
+                                'Beskrivning (id: DescriptionHtml), sv-SE': ['Beskrivning (id: DescriptionHtml), sv-SE', 'Beskrivning, sv-SE', 'Beskrivning', 'Description', 'Long description', 'DescriptionHtml'],
+                                'Sökmotoranpassad titel, sv-SE': ['Sökmotoranpassad titel, sv-SE', 'SEO-titel', 'SEO titel', 'Meta title', 'SEOTitle'],
+                                'Sökmotoranpassad beskrivning, sv-SE': ['Sökmotoranpassad beskrivning, sv-SE', 'SEO-beskrivning', 'SEO beskrivning', 'Meta description', 'SEODescription']
+                              };
+                              return desiredHeaders.map((header, hIdx) => {
+                                let display = '';
+                                if (header === 'Namn, sv-SE') {
+                                  const v = getByAliases(aliasMap[header], ['namn']);
+                                  display = String(v || product.name_sv || '');
+                                } else if (header === 'Beskrivning (id: DescriptionHtml), sv-SE') {
+                                  const v = getByAliases(aliasMap[header], ['beskriv', 'description']);
+                                  display = String(v || product.description_sv || '');
+                                } else if (header === 'Kort beskrivning, sv-SE') {
+                                  const v = getByAliases(aliasMap[header], ['kort', 'beskriv']);
+                                  const short = String(v || product.description_sv || '');
+                                  display = short.length > 120 ? `${short.substring(0, 120)}...` : short;
+                                } else if (header === 'Sökmotoranpassad titel, sv-SE') {
+                                  const v = getByAliases(aliasMap[header], ['seo', 'titel']);
+                                  display = String(v || '');
+                                } else if (header === 'Sökmotoranpassad beskrivning, sv-SE') {
+                                  const v = getByAliases(aliasMap[header], ['seo', 'beskriv']);
+                                  display = String(v || '');
+                                } else {
+                                  const v = getByAliases(aliasMap[header] || [header]);
+                                  display = String(v || '');
+                                }
+                                if (!display) display = '-';
+                                return (
+                                  <td key={hIdx} className="px-3 py-2 text-sm text-gray-600">
+                                    <div className="truncate" title={display}>{display}</div>
+                                  </td>
+                                )
+                              })
+                            })()
                           ) : (
                             <>
-                              <td className="px-3 py-2 text-sm font-medium text-gray-900">
-                                {jobType === 'product_texts' ? (item as Product).name_sv : (item as UIString).name}
-                              </td>
+                              <td className="px-3 py-2 text-sm font-medium text-gray-900">{(item as UIString).name}</td>
                               <td className="px-3 py-2 text-sm text-gray-500">
-                                {jobType === 'product_texts' ? (
-                                  (item as Product).description_sv.length > 120 ? `${(item as Product).description_sv.substring(0, 120)}...` : (item as Product).description_sv
-                                ) : (
-                                  <div className="space-y-1">
-                                    {Object.entries((item as UIString).values).map(([locale, value]) => (
-                                      <div key={locale} className="text-xs">
-                                        <span className="font-medium">{locale}:</span> {value || '(tom)'}
-                                      </div>
-                                    ))}
-                                  </div>
-                                )}
+                                <div className="space-y-1">
+                                  {Object.entries((item as UIString).values).map(([locale, value]) => (
+                                    <div key={locale} className="text-xs">
+                                      <span className="font-medium">{locale}:</span> {value || '(tom)'}
+                                    </div>
+                                  ))}
+                                </div>
                               </td>
                             </>
                           )}
