@@ -49,6 +49,9 @@ model Product {
   batch_id        String?
   name_sv         String
   description_sv  String
+  description_html_sv String?   // Long description (HTML)
+  seo_title_sv    String?       // SEO title
+  seo_description_sv String?    // SEO description
   attributes      String?
   tone_hint       String?
   raw_data        String?       // JSON string containing all original Excel columns

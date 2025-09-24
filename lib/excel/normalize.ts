@@ -4,6 +4,9 @@ import { extractTokens, ExtractedTokens } from '@/lib/token-extractor';
 export interface Product {
   name_sv: string;
   description_sv: string;
+  description_html_sv?: string; // Long description
+  seo_title_sv?: string;
+  seo_description_sv?: string;
   attributes?: string;
   tone_hint?: string;
   raw_data?: Record<string, any>; // All original Excel columns
@@ -45,11 +48,20 @@ const HEADER_ALIASES = {
   ],
   description_sv: [
     'description_sv', 'description', 'product_description',
+    'kort_beskrivning_sv-se', 'kort_beskrivning_sv_se',
+    'kort beskrivning,sv-se', 'kort beskrivning, sv-se', 'kort beskrivning sv-se'
+  ],
+  description_html_sv: [
     '"beskrivning (id: descriptionhtml)",sv-se', 'beskrivning (id: descriptionhtml),sv-se',
     'beskrivning (id: descriptionhtml), sv-se', 'beskrivning (id: descriptionhtml) sv-se',
     'beskrivning_id_descriptionhtml_sv-se', 'beskrivning_id_descriptionhtml_sv_se',
-    'kort_beskrivning_sv-se', 'kort_beskrivning_sv_se',
-    'kort beskrivning,sv-se', 'kort beskrivning, sv-se', 'kort beskrivning sv-se',
+    'produktblad,sv-se', 'produktblad, sv-se', 'produktblad sv-se'
+  ],
+  seo_title_sv: [
+    'sökmotoranpassad_titel_sv-se', 'sökmotoranpassad_titel_sv_se',
+    'sökmotoranpassad titel,sv-se', 'sökmotoranpassad titel, sv-se', 'sökmotoranpassad titel sv-se'
+  ],
+  seo_description_sv: [
     'sökmotoranpassad_beskrivning_sv-se', 'sökmotoranpassad_beskrivning_sv_se',
     'sökmotoranpassad beskrivning,sv-se', 'sökmotoranpassad beskrivning, sv-se',
     'sökmotoranpassad beskrivning sv-se'
@@ -59,7 +71,7 @@ const HEADER_ALIASES = {
 } as const;
 
 const REQUIRED_COLUMNS = {
-  product_texts: ['name_sv', 'description_sv'],
+  product_texts: ['name_sv'], // Only name is required, descriptions are optional
   ui_strings: [],
   brands: [] // Brands don't have required columns
 } as const;
@@ -218,32 +230,36 @@ function getNormalizedHeaders(worksheet: ExcelJS.Worksheet): Record<string, numb
     }
   });
   
-  // Second pass: for description_sv, find the first column that has data
-  if (matchingColumns.description_sv) {
-    console.log(`[HEADERS] Found ${matchingColumns.description_sv.length} description columns:`, matchingColumns.description_sv);
-    
-    // Check each description column to see which one has data
-    for (const colNumber of matchingColumns.description_sv) {
-      const hasData = checkColumnHasData(worksheet, colNumber);
-      console.log(`[HEADERS] Column ${colNumber} has data:`, hasData);
+  // Second pass: for each field type, find the first column that has data
+  const fieldTypes = ['description_sv', 'description_html_sv', 'seo_title_sv', 'seo_description_sv'];
+  
+  for (const fieldType of fieldTypes) {
+    if (matchingColumns[fieldType]) {
+      console.log(`[HEADERS] Found ${matchingColumns[fieldType].length} ${fieldType} columns:`, matchingColumns[fieldType]);
       
-      if (hasData) {
-        headers.description_sv = colNumber;
-        console.log(`[HEADERS] ✅ Selected column ${colNumber} for description_sv (has data)`);
-        break;
+      // Check each column to see which one has data
+      for (const colNumber of matchingColumns[fieldType]) {
+        const hasData = checkColumnHasData(worksheet, colNumber);
+        console.log(`[HEADERS] Column ${colNumber} has data:`, hasData);
+        
+        if (hasData) {
+          headers[fieldType] = colNumber;
+          console.log(`[HEADERS] ✅ Selected column ${colNumber} for ${fieldType} (has data)`);
+          break;
+        }
       }
-    }
-    
-    // If no column has data, use the first one
-    if (!headers.description_sv && matchingColumns.description_sv.length > 0) {
-      headers.description_sv = matchingColumns.description_sv[0];
-      console.log(`[HEADERS] ⚠️ No description column has data, using first: ${headers.description_sv}`);
+      // IMPORTANT: If no column has data for this field type, do NOT set a header at all.
+      // This prevents accidental fallbacks that would display values that do not exist in the import file.
     }
   }
   
-  // For other columns, use the first match
+  // For other columns, use the first match, but DO NOT set optional text fields
+  // if we didn't detect actual data above (description_html_sv, seo_title_sv, seo_description_sv).
+  const optionalTextFields = new Set(['description_html_sv', 'seo_title_sv', 'seo_description_sv']);
   for (const [normalizedKey, columns] of Object.entries(matchingColumns)) {
-    if (normalizedKey !== 'description_sv' && columns.length > 0) {
+    if (normalizedKey === 'description_sv') continue;
+    if (optionalTextFields.has(normalizedKey)) continue; // handled above only when data exists
+    if (columns.length > 0) {
       headers[normalizedKey] = columns[0];
     }
   }
@@ -260,7 +276,8 @@ function checkColumnHasData(worksheet: ExcelJS.Worksheet, colNumber: number): bo
     if (rowNumber === 1) return; // Skip header row
     
     rowCount++;
-    if (rowCount > 10) return; // Only check first 10 rows
+    // Check more rows to avoid missing sparse columns (previously only 10)
+    if (rowCount > 200) return; // Safety limit
     
     const cell = row.getCell(colNumber);
     const value = String(cell.value || '').trim();
@@ -369,18 +386,17 @@ function isEmptyRow(row: ExcelJS.Row): boolean {
 
 function parseProductRow(row: ExcelJS.Row, headers: Record<string, number>): Product | null {
   const name_sv = getCellValue(row, headers.name_sv);
-  const description_sv = getCellValue(row, headers.description_sv);
+  const description_sv = headers.description_sv ? getCellValue(row, headers.description_sv) : '';
+  const description_html_sv = headers.description_html_sv ? getCellValue(row, headers.description_html_sv) : '';
+  const seo_title_sv = headers.seo_title_sv ? getCellValue(row, headers.seo_title_sv) : '';
+  const seo_description_sv = headers.seo_description_sv ? getCellValue(row, headers.seo_description_sv) : '';
   
-  console.log(`[PARSE] Row ${row.number}: name_sv="${name_sv}", description_sv="${description_sv}"`);
+  console.log(`[PARSE] Row ${row.number}: name_sv="${name_sv}", description_sv="${description_sv}", description_html_sv="${description_html_sv}"`);
   
   if (!name_sv) {
     console.log(`[PARSE] Row ${row.number}: Missing required field - name_sv: ${!!name_sv}`);
     return null;
   }
-  
-  // If description is empty, use name as description
-  const finalDescription = description_sv || name_sv;
-  console.log(`[PARSE] Row ${row.number}: Using description: "${finalDescription}"`);
   
   const attributes = headers.attributes ? getCellValue(row, headers.attributes) : undefined;
   const tone_hint = headers.tone_hint ? getCellValue(row, headers.tone_hint) : undefined;
@@ -396,7 +412,10 @@ function parseProductRow(row: ExcelJS.Row, headers: Record<string, number>): Pro
   
   return {
     name_sv: name_sv.trim(),
-    description_sv: truncateDescription(finalDescription.trim()),
+    description_sv: truncateDescription(description_sv.trim()),
+    description_html_sv: description_html_sv ? truncateDescription(description_html_sv.trim()) : undefined,
+    seo_title_sv: seo_title_sv ? seo_title_sv.trim() : undefined,
+    seo_description_sv: seo_description_sv ? truncateDescription(seo_description_sv.trim()) : undefined,
     attributes: attributes?.trim(),
     tone_hint: tone_hint?.trim(),
     raw_data: rawData,

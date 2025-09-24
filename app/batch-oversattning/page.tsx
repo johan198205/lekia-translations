@@ -218,14 +218,32 @@ function BatchOversattningContent() {
   const [actionTranslate, setActionTranslate] = useState<boolean>(false)
   // Field selection per action (UI only for now)
   const fieldOptions = [
-    { key: 'name_sv', label: 'Namn, sv-SE' },
-    { key: 'short_sv', label: 'Kort beskrivning, sv-SE' },
-    { key: 'description_html_sv', label: 'Beskrivning (id: DescriptionHtml), sv-SE' },
-    { key: 'seo_title_sv', label: 'Sökmotoranpassad titel, sv-SE' },
-    { key: 'seo_description_sv', label: 'Sökmotoranpassad beskrivning, sv-SE' },
+    { key: 'name_sv', label: 'Namn, sv-SE', header: 'NAMN, SV-SE' },
+    { key: 'short_sv', label: 'Kort beskrivning, sv-SE', header: 'KORT BESKRIVNING, SV-SE' },
+    { key: 'description_html_sv', label: 'Beskrivning (id: DescriptionHtml), sv-SE', header: 'BESKRIVNING (ID: DESCRIPTIONHTML), SV-SE' },
+    { key: 'seo_title_sv', label: 'Sökmotoranpassad titel, sv-SE', header: 'SÖKMOTORANPASSAD TITEL, SV-SE' },
+    { key: 'seo_description_sv', label: 'Sökmotoranpassad beskrivning, sv-SE', header: 'SÖKMOTORANPASSAD BESKRIVNING, SV-SE' },
   ] as const
   const [optimizeFields, setOptimizeFields] = useState<Set<string>>(new Set())
   const [translateFields, setTranslateFields] = useState<Set<string>>(new Set())
+  
+  // Generate dynamic table columns based on selected fields
+  const getDynamicColumns = () => {
+    const columns = [
+      { key: 'artikelnummer', header: 'ARTIKELNUMMER', type: 'static' },
+      { key: 'variantav', header: 'VARIANTAV', type: 'static' }
+    ]
+    
+    // Add selected optimize fields with both original and "NY-" versions
+    fieldOptions.forEach(opt => {
+      if (optimizeFields.has(opt.key)) {
+        columns.push({ key: opt.key, header: opt.header, type: 'original' })
+        columns.push({ key: `ny_${opt.key}`, header: `NY-${opt.header}`, type: 'optimized' })
+      }
+    })
+    
+    return columns
+  }
   const [drawerProduct, setDrawerProduct] = useState<Product | null>(null)
   const [drawerField, setDrawerField] = useState<'description_sv' | 'optimized_sv' | 'translated_no' | 'translated_da' | 'translated_en' | 'translated_de' | 'translated_fr' | 'translated_es' | 'translated_it' | 'translated_pt' | 'translated_nl' | 'translated_pl' | 'translated_ru' | 'translated_fi' | null>(null)
   const [isDrawerOpen, setIsDrawerOpen] = useState(false)
@@ -2428,13 +2446,16 @@ function BatchOversattningContent() {
                                 className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                               />
                             </th>
-                            <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">ARTIKELNUMMER</th>
-                            <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">VARIANTAV</th>
-                            <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">NAMN, SV-SE</th>
-                            <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">KORT BESKRIVNING, SV-SE</th>
-                            <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">BESKRIVNING (ID: DESCRIPTIONHTML), SV-SE</th>
-                            <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">SÖKMOTORANPASSAD TITEL, SV-SE</th>
-                            <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">SÖKMOTORANPASSAD BESKRIVNING, SV-SE</th>
+                            {getDynamicColumns().map((col) => (
+                              <th 
+                                key={col.key} 
+                                className={`px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider ${
+                                  col.type === 'optimized' ? 'bg-blue-50' : ''
+                                }`}
+                              >
+                                {col.header}
+                              </th>
+                            ))}
                           </tr>
                         </thead>
                         <tbody className="bg-white divide-y divide-gray-200">
@@ -2460,7 +2481,8 @@ function BatchOversattningContent() {
                               </td>
                               {(() => {
                                 try {
-                                  const rawData = typeof product.raw_data === 'string' ? JSON.parse(product.raw_data) : (product.raw_data || {})
+                                  const rawDataStr = (product as any)['raw_data'] as string | undefined
+                                  const rawData = rawDataStr ? JSON.parse(rawDataStr) : {}
                                   // Normalize helper for flexible header matching (same as step 2)
                                   const normalizeKey = (s: string) => s.toLowerCase().replace(/[^a-z0-9åäöæøœ]+/g, '')
                                   const toPlainString = (v: unknown): string => {
@@ -2510,27 +2532,69 @@ function BatchOversattningContent() {
                                   const seoTitle = getByAliases(aliasMap['Sökmotoranpassad titel, sv-SE']) || '-'
                                   const seoDesc = getByAliases(aliasMap['Sökmotoranpassad beskrivning, sv-SE']) || '-'
 
+                                  // Generate dynamic cells based on selected columns
+                                  const getCellValue = (col: any) => {
+                                    switch (col.key) {
+                                      case 'artikelnummer':
+                                        return artikelnummer || '-'
+                                      case 'variantav':
+                                        return variantAv || '-'
+                                      case 'name_sv':
+                                        return product.name_sv || '-'
+                                      case 'ny_name_sv':
+                                        return product.optimized_sv || '-'
+                                      case 'short_sv':
+                                        return product.description_sv || '-'
+                                      case 'ny_short_sv':
+                                        return product.optimized_sv || '-'
+                                      case 'description_html_sv':
+                                        return (product as any).description_html_sv || longDesc || '-'
+                                      case 'ny_description_html_sv':
+                                        return product.optimized_sv || '-'
+                                      case 'seo_title_sv':
+                                        return (product as any).seo_title_sv || seoTitle || '-'
+                                      case 'ny_seo_title_sv':
+                                        return product.optimized_sv || '-'
+                                      case 'seo_description_sv':
+                                        return (product as any).seo_description_sv || seoDesc || '-'
+                                      case 'ny_seo_description_sv':
+                                        return product.optimized_sv || '-'
+                                      default:
+                                        return '-'
+                                    }
+                                  }
+
                                   return (
                                     <>
-                                      <td className="px-2 py-1 text-sm text-gray-900">{artikelnummer || '-'}</td>
-                                      <td className="px-2 py-1 text-sm text-gray-900">{variantAv || '-'}</td>
-                                      <td className="px-2 py-1 text-sm text-gray-900">{product.name_sv || '-'}</td>
-                                      <td className="px-2 py-1 text-sm text-gray-900">{product.description_sv || '-'}</td>
-                                      <td className="px-2 py-1 text-sm text-gray-900">{longDesc || '-'}</td>
-                                      <td className="px-2 py-1 text-sm text-gray-900">{seoTitle || '-'}</td>
-                                      <td className="px-2 py-1 text-sm text-gray-900">{seoDesc || '-'}</td>
+                                      {getDynamicColumns().map((col) => (
+                                        <td 
+                                          key={col.key} 
+                                          className={`px-2 py-1 text-sm text-gray-900 ${
+                                            col.type === 'optimized' ? 'bg-blue-50' : ''
+                                          }`}
+                                        >
+                                          {getCellValue(col)}
+                                        </td>
+                                      ))}
                                     </>
                                   )
                                 } catch {
                                   return (
                                     <>
-                                      <td className="px-2 py-1 text-sm text-gray-900">-</td>
-                                      <td className="px-2 py-1 text-sm text-gray-900">-</td>
-                                      <td className="px-2 py-1 text-sm text-gray-900">{product.name_sv || '-'}</td>
-                                      <td className="px-2 py-1 text-sm text-gray-900">{product.description_sv || '-'}</td>
-                                      <td className="px-2 py-1 text-sm text-gray-900">-</td>
-                                      <td className="px-2 py-1 text-sm text-gray-900">-</td>
-                                      <td className="px-2 py-1 text-sm text-gray-900">-</td>
+                                      {getDynamicColumns().map((col) => (
+                                        <td 
+                                          key={col.key} 
+                                          className={`px-2 py-1 text-sm text-gray-900 ${
+                                            col.type === 'optimized' ? 'bg-blue-50' : ''
+                                          }`}
+                                        >
+                                          {col.key === 'name_sv' ? (product.name_sv || '-') : 
+                                           col.key === 'short_sv' ? (product.description_sv || '-') :
+                                           col.key === 'description_html_sv' ? ((product as any).description_html_sv || '-') :
+                                           col.key === 'seo_title_sv' ? ((product as any).seo_title_sv || '-') :
+                                           col.key === 'seo_description_sv' ? ((product as any).seo_description_sv || '-') : '-'}
+                                        </td>
+                                      ))}
                                     </>
                                   )
                                 }
@@ -2594,7 +2658,7 @@ function BatchOversattningContent() {
                 </p>
               )}
 
-              {/* Visa optimerade produkter eller UI-element */}
+              {/* Visa optimerade produkter eller UI-element - nu integrerat i huvudtabellen */}
               {phase === 'readyToExport' && (
                 <div className="mt-4 p-4 bg-gray-50 rounded-lg">
                   <h3 className="font-medium mb-4">
@@ -2644,260 +2708,11 @@ function BatchOversattningContent() {
                     )}
                   </div>
                   
-                  {/* Produktlista eller UI-element lista */}
-                  <div className="max-h-96 overflow-y-auto border border-gray-200 rounded-md">
-                    <table className="w-full text-xs">
-                      <thead className="bg-gray-50 sticky top-0">
-                        <tr>
-                          <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-8">
-                            <input
-                              type="checkbox"
-                              checked={selectedIds.size === (jobType === 'product_texts' ? parsedProducts.length : jobType === 'ui_strings' ? parsedUIStrings.length : parsedBrands.length) && (jobType === 'product_texts' ? parsedProducts.length : jobType === 'ui_strings' ? parsedUIStrings.length : parsedBrands.length) > 0}
-                              onChange={selectedIds.size === (jobType === 'product_texts' ? parsedProducts.length : jobType === 'ui_strings' ? parsedUIStrings.length : parsedBrands.length) ? handleDeselectAll : handleSelectAll}
-                              className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                            />
-                          </th>
-                          {jobType === 'product_texts' ? (
-                            <>
-                              <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">PRODUKTNAMN</th>
-                              <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">BESKRIVNING (SV)</th>
-                              <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">OPTIMERAD TEXT (SV)</th>
-                              {selectedTargetLangs.map((langCode) => (
-                                <th key={langCode} className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                  OPTIMERAD TEXT ({langCode.toUpperCase()})
-                                </th>
-                              ))}
-                              <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-20">STATUS</th>
-                            </>
-                          ) : jobType === 'brands' ? (
-                            <>
-                              {brandsHeaders.map((header, index) => (
-                                <th key={index} className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                  {header}
-                                </th>
-                              ))}
-                              <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-20">STATUS</th>
-                            </>
-                          ) : (
-                            <>
-                              <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">NAMN</th>
-                              <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">KÄLLA (SV-SE)</th>
-                              {/* Show only selected target languages */}
-                              {selectedTargetLangs.map((langCode) => {
-                                const localeMap: Record<string, string> = {
-                                  'da': 'da-DK',
-                                  'nb': 'nb-NO',
-                                  'no': 'no-NO',
-                                  'en': 'en-US',
-                                  'de': 'de-DE',
-                                  'fr': 'fr-FR',
-                                  'es': 'es-ES',
-                                  'it': 'it-IT',
-                                  'pt': 'pt-PT',
-                                  'nl': 'nl-NL',
-                                  'pl': 'pl-PL',
-                                  'ru': 'ru-RU',
-                                  'fi': 'fi-FI',
-                                  'sv': 'sv-SE'
-                                };
-                                const locale = localeMap[langCode] || `${langCode}-${langCode.toUpperCase()}`;
-                                return (
-                                  <th key={locale} className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                    {locale}
-                                  </th>
-                                );
-                              })}
-                              <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-20">STATUS</th>
-                            </>
-                          )}
-                        </tr>
-                      </thead>
-                      <tbody className="bg-white divide-y divide-gray-200">
-                        {jobType === 'product_texts' ? (
-                          parsedProducts.slice(0, visibleRows).map((product, index) => (
-                            <tr key={index} className="hover:bg-gray-50">
-                              <td className="px-2 py-1">
-                                <input
-                                  type="checkbox"
-                                  checked={selectedIds.has(index)}
-                                  onChange={() => handleProductToggle(index)}
-                                  className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                                />
-                              </td>
-                              <td className="px-2 py-1 text-xs font-bold text-gray-900">
-                                <div className="truncate" title={product.name_sv}>
-                                  {product.name_sv}
-                                </div>
-                              </td>
-                              <td className="px-2 py-1 text-xs text-gray-500">
-                                <div 
-                                  className="cursor-pointer hover:bg-gray-100 truncate"
-                                  onClick={() => handleCellClick(product, 'description_sv')}
-                                  title="Klicka för att redigera"
-                                >
-                                  {product.description_sv.length > 40 
-                                    ? `${product.description_sv.substring(0, 40)}...` 
-                                    : product.description_sv}
-                                </div>
-                              </td>
-                              <td className="px-2 py-1 text-xs text-gray-500">
-                                {product.optimized_sv ? (
-                                  <div 
-                                    className="cursor-pointer hover:bg-gray-100 truncate"
-                                    onClick={() => handleCellClick(product, 'optimized_sv')}
-                                    title="Klicka för att redigera"
-                                  >
-                                    <div className="truncate font-mono text-xs">
-                                      {product.optimized_sv.substring(0, 40) + (product.optimized_sv.length > 40 ? '...' : '')}
-                                    </div>
-                                  </div>
-                                ) : (
-                                  <span className="text-gray-400">-</span>
-                                )}
-                              </td>
-                              {translationLanguages.map((langCode) => {
-                                const fieldName = `translated_${langCode}` as keyof Product;
-                                const translatedText = product[fieldName] as string;
-                                return (
-                                  <td key={langCode} className="px-2 py-1 text-xs text-gray-500">
-                                    {translatedText ? (
-                                      <div 
-                                        className="cursor-pointer hover:bg-gray-100 truncate"
-                                        onClick={() => handleCellClick(product, fieldName as any)}
-                                        title="Klicka för att redigera"
-                                      >
-                                        {translatedText.length > 40 
-                                          ? `${translatedText.substring(0, 40)}...` 
-                                          : translatedText}
-                                      </div>
-                                    ) : (
-                                      <span className="text-gray-400">-</span>
-                                    )}
-                                  </td>
-                                );
-                              })}
-                              <td className="px-2 py-1 text-xs text-gray-700">
-                                {getProductStatus(product)}
-                              </td>
-                            </tr>
-                          ))
-                        ) : jobType === 'ui_strings' ? (
-                          parsedUIStrings.slice(0, visibleRows).map((uiItem, index) => (
-                            <tr key={index} className="hover:bg-gray-50">
-                              <td className="px-2 py-1">
-                                <input
-                                  type="checkbox"
-                                  checked={selectedIds.has(index)}
-                                  onChange={() => handleProductToggle(index)}
-                                  className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                                />
-                              </td>
-                              <td className="px-2 py-1 text-xs font-bold text-gray-900">
-                                <div className="truncate" title={uiItem.name}>
-                                  {uiItem.name}
-                                </div>
-                              </td>
-                              <td className="px-2 py-1 text-xs text-gray-600">
-                                <div className="truncate" title={uiItem.values['sv-SE'] || ''}>
-                                  {uiItem.values['sv-SE'] || '(tom)'}
-                                </div>
-                              </td>
-                              {/* Show only selected target languages */}
-                              {selectedTargetLangs.map((langCode) => {
-                                const localeMap: Record<string, string> = {
-                                  'da': 'da-DK',
-                                  'nb': 'nb-NO',
-                                  'no': 'no-NO',
-                                  'en': 'en-US',
-                                  'de': 'de-DE',
-                                  'fr': 'fr-FR',
-                                  'es': 'es-ES',
-                                  'it': 'it-IT',
-                                  'pt': 'pt-PT',
-                                  'nl': 'nl-NL',
-                                  'pl': 'pl-PL',
-                                  'ru': 'ru-RU',
-                                  'fi': 'fi-FI',
-                                  'sv': 'sv-SE'
-                                };
-                                const locale = localeMap[langCode] || `${langCode}-${langCode.toUpperCase()}`;
-                                const value = uiItem.values[locale] || '';
-                                return (
-                                  <td key={locale} className="px-2 py-1 text-xs text-gray-500">
-                                    <div className="truncate" title={value}>
-                                      {value || '(tom)'}
-                                    </div>
-                                  </td>
-                                );
-                              })}
-                              <td className="px-2 py-1 text-xs text-gray-700">
-                                {uiItem.status || 'pending'}
-                              </td>
-                            </tr>
-                          ))
-                        ) : (
-                          parsedBrands.slice(0, visibleRows).map((brand, index) => {
-                            // Parse raw_data to get cell values
-                            let rawData: Record<string, any> = {};
-                            try {
-                              rawData = brand.raw_data ? JSON.parse(brand.raw_data) : {};
-                            } catch (error) {
-                              console.warn('Failed to parse brand raw_data:', error);
-                            }
-
-                            return (
-                              <tr key={index} className="hover:bg-gray-50">
-                                <td className="px-2 py-1">
-                                  <input
-                                    type="checkbox"
-                                    checked={selectedIds.has(index)}
-                                    onChange={() => handleProductToggle(index)}
-                                    className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                                  />
-                                </td>
-                                {brandsHeaders.map((header, headerIndex) => {
-                                  const cellValue = rawData[header] || '';
-                                  const displayValue = String(cellValue).trim();
-                                  
-                                  return (
-                                    <td key={headerIndex} className="px-2 py-1 text-xs text-gray-500">
-                                      {displayValue ? (
-                                        <div className="truncate" title={displayValue}>
-                                          {displayValue.length > 40 
-                                            ? `${displayValue.substring(0, 40)}...` 
-                                            : displayValue}
-                                        </div>
-                                      ) : (
-                                        <span className="text-gray-400">-</span>
-                                      )}
-                                    </td>
-                                  );
-                                })}
-                                <td className="px-2 py-1 text-xs text-gray-700">
-                                  {brand.status || 'pending'}
-                                </td>
-                              </tr>
-                            );
-                          })
-                        )}
-                      </tbody>
-                    </table>
+                  {/* Tabellen är nu integrerad i huvudtabellen ovan */}
+                  <div className="text-center text-gray-600 text-sm">
+                    <p>✅ Tabellen ovan visar nu optimerade resultat direkt</p>
+                    <p>Välj produkter och kör bearbetning för att se resultat i samma tabell</p>
                   </div>
-                  
-                  {/* Visa fler-knapp */}
-                  {visibleRows < (jobType === 'product_texts' ? parsedProducts.length : jobType === 'ui_strings' ? parsedUIStrings.length : parsedBrands.length) && (
-                    <div className="text-center mt-4">
-                      <button
-                        onClick={handleShowMore}
-                        className="bg-gray-600 text-white px-4 py-2 rounded-md hover:bg-gray-700 text-sm"
-                      >
-                        Visa fler ({Math.min(200, (jobType === 'product_texts' ? parsedProducts.length : jobType === 'ui_strings' ? parsedUIStrings.length : parsedBrands.length) - visibleRows)} till)
-                      </button>
-                      <p className="text-xs text-gray-500 mt-1">
-                        Visar {Math.min(visibleRows, jobType === 'product_texts' ? parsedProducts.length : jobType === 'ui_strings' ? parsedUIStrings.length : parsedBrands.length)} av {jobType === 'product_texts' ? parsedProducts.length : jobType === 'ui_strings' ? parsedUIStrings.length : parsedBrands.length} {jobType === 'product_texts' ? 'produkter' : jobType === 'ui_strings' ? 'UI-element' : 'varumärken'}
-                      </p>
-                    </div>
-                  )}
                 </div>
               )}
             </div>
